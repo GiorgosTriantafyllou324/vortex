@@ -557,12 +557,12 @@ int main(int argc, char *argv[]) {
   }
 
   if ((N % cfg::tileN) != 0) {
-    std::cout << "Error: M must be a multiple of tensor tileN!" << std::endl;
+    std::cout << "Error: N must be a multiple of tensor tileN!" << std::endl;
     return -1;
   }
 
   if ((K % cfg::tileK) != 0) {
-    std::cout << "Error: M must be a multiple of tensor tileK!" << std::endl;
+    std::cout << "Error: K must be a multiple of tensor tileK!" << std::endl;
     return -1;
   }
 
