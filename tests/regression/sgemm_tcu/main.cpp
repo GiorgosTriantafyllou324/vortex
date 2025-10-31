@@ -1,3 +1,5 @@
+// tcu-outer-product branch
+
 #include "common.h"
 #include <chrono>
 #include <cmath>
