@@ -75,6 +75,14 @@ module VX_core import VX_gpu_pkg::*; #(
         .TAG_WIDTH (LSU_TAG_WIDTH)
     ) lsu_mem_if[`NUM_LSU_BLOCKS]();
 
+`ifdef TCU_OP
+    VX_lsu_mem_if #(
+        .NUM_LANES (`NUM_LSU_LANES),
+        .DATA_SIZE (LSU_WORD_SIZE),
+        .TAG_WIDTH (LSU_TAG_WIDTH)
+    ) tcu_lsu_mem_if();
+`endif
+
 `ifdef PERF_ENABLE
     lmem_perf_t lmem_perf;
     coalescer_perf_t coalescer_perf;
@@ -202,6 +210,9 @@ module VX_core import VX_gpu_pkg::*; #(
     `endif
 
         .warp_ctl_if    (warp_ctl_if),
+    `ifdef TCU_OP
+        .tcu_lsu_mem_if (tcu_lsu_mem_if),
+    `endif
         .branch_ctl_if  (branch_ctl_if)
     );
 
@@ -230,6 +241,9 @@ module VX_core import VX_gpu_pkg::*; #(
     `ifdef EXT_DXA_ENABLE
         .dxa_bank_wr_if (dxa_bank_wr_if),
         .dxa_txbar_bus_if(dxa_txbar_bus_if),
+    `endif
+    `ifdef TCU_OP
+        .tcu_lsu_mem_if (tcu_lsu_mem_if),
     `endif
         .lsu_mem_if    (lsu_mem_if),
         .dcr_flush_if  (dcr_flush_if),

@@ -487,6 +487,9 @@ package VX_gpu_pkg;
     localparam INST_TCU_WMMA_SP    = 4'h1;
     localparam INST_TCU_META_STORE = 4'h2;
 `endif
+`ifdef TCU_OP
+    localparam INST_TCU_MMA_OP = 4'h3;
+`endif
     localparam INST_TCU_BITS = 4;
 `endif
 
@@ -895,7 +898,15 @@ package VX_gpu_pkg;
     localparam LSU_TAG_ID_BITS      = (`CLOG2(`LSUQ_IN_SIZE) + `CLOG2(LSU_MEM_BATCHES));
     localparam LSU_TAG_WIDTH        = (UUID_WIDTH + LSU_TAG_ID_BITS);
     localparam LSU_NUM_REQS	        = `NUM_LSU_BLOCKS * `NUM_LSU_LANES;
-    localparam LMEM_TAG_WIDTH_BASE  = LSU_TAG_WIDTH + `CLOG2(`NUM_LSU_BLOCKS);
+    
+`ifdef TCU_OP
+    localparam TCU_LSU_BLOCKS       = 1;
+`else
+    localparam TCU_LSU_BLOCKS       = 0;
+`endif
+    localparam NUM_LSU_TOTAL        = `NUM_LSU_BLOCKS + TCU_LSU_BLOCKS;
+    localparam LMEM_TAG_WIDTH_BASE  = LSU_TAG_WIDTH + `CLOG2(NUM_LSU_TOTAL); // `CLOG2(`NUM_LSU_BLOCKS);
+
 `ifdef EXT_DXA_ENABLE
     // DXA completion signaling via SMEM write tags requires route bits
     // (engine/core) plus metadata bits (barrier address + last-packet bit).
@@ -954,7 +965,12 @@ package VX_gpu_pkg;
 
     // Input request size (using coalesced memory blocks)
     localparam DCACHE_CHANNELS	    = `UP((`NUM_LSU_LANES * LSU_WORD_SIZE) / DCACHE_WORD_SIZE);
+
+`ifdef TCU_OP
+    localparam DCACHE_NUM_REQS	    = NUM_LSU_TOTAL * DCACHE_CHANNELS;
+`else
     localparam DCACHE_NUM_REQS	    = `NUM_LSU_BLOCKS * DCACHE_CHANNELS;
+`endif
 
     // Core request tag Id bits
     localparam DCACHE_MERGED_REQS   = (`NUM_LSU_LANES * LSU_WORD_SIZE) / DCACHE_WORD_SIZE;

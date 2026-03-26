@@ -136,6 +136,8 @@ main() {
     set_driver_path
     set_app_path
 
+    compile_start=$(date +%s)
+
     # execute on default installed GPU
     if [ "$DRIVER" = "gpu" ]; then
         run_app
@@ -163,8 +165,12 @@ main() {
     fi
 
     build_driver
+    compile_end=$(date +%s)
+
+    run_start=$(date +%s)
     run_app
     status=$?
+    run_end=$(date +%s)
 
     if [ $DEBUG -eq 1 ] && [ -f "$APP_PATH/trace.vcd" ]; then
         mv -f $APP_PATH/trace.vcd .
@@ -172,6 +178,15 @@ main() {
 
     if [ $SCOPE -eq 1 ] && [ -f "$APP_PATH/scope.vcd" ]; then
         mv -f $APP_PATH/scope.vcd .
+    fi
+
+    compile_secs=$((compile_end - compile_start))
+    run_secs=$((run_end - run_start))
+    echo "Compile time (s): $compile_secs"
+    echo "Run time (s): $run_secs"
+    if [ -n "$LOGFILE" ]; then
+        echo "Compile time (s): $compile_secs" >> "$LOGFILE"
+        echo "Run time (s): $run_secs" >> "$LOGFILE"
     fi
 
     exit $status

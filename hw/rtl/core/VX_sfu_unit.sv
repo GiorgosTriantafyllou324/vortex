@@ -37,6 +37,10 @@ module VX_sfu_unit import VX_gpu_pkg::*; #(
     VX_txbar_bus_if.slave   dxa_txbar_bus_if,
 `endif
 
+`ifdef TCU_OP
+    VX_txbar_bus_if.slave   tcu_txbar_bus_if,
+`endif
+
     VX_sched_csr_if.slave   sched_csr_if,
 
     VX_dcr_csr_if           dcr_csr_if,
@@ -166,17 +170,97 @@ module VX_sfu_unit import VX_gpu_pkg::*; #(
         .txbar_bus_if(dxa_txbar_attach_if)
     );
 
-    // arbitrate between DXA agent and DXA core (prioritizing the DXA core)
+    // Arbitrate txbar events (DXA mem done > DXA setup > TCU).
+`ifdef EXT_TCU_ENABLE
+`ifdef TCU_OP
+    assign txbar_bus_if.valid = dxa_txbar_bus_if.valid || dxa_txbar_attach_if.valid || tcu_txbar_bus_if.valid;
+    assign txbar_bus_if.data  = dxa_txbar_bus_if.valid ? dxa_txbar_bus_if.data
+                               : dxa_txbar_attach_if.valid ? dxa_txbar_attach_if.data
+                               : tcu_txbar_bus_if.data;
+    assign dxa_txbar_bus_if.ready    = txbar_bus_if.ready;
+    assign dxa_txbar_attach_if.ready = txbar_bus_if.ready && ~dxa_txbar_bus_if.valid;
+    assign tcu_txbar_bus_if.ready    = txbar_bus_if.ready && ~dxa_txbar_bus_if.valid && ~dxa_txbar_attach_if.valid;
+`else  // Not TCU_OP
     assign txbar_bus_if.valid = dxa_txbar_bus_if.valid || dxa_txbar_attach_if.valid;
     assign txbar_bus_if.data.is_done = dxa_txbar_bus_if.valid;
     assign txbar_bus_if.data.addr = dxa_txbar_bus_if.valid ? dxa_txbar_bus_if.data.addr : dxa_txbar_attach_if.data.addr;
     assign dxa_txbar_bus_if.ready = txbar_bus_if.ready;
     assign dxa_txbar_attach_if.ready = txbar_bus_if.ready && ~dxa_txbar_bus_if.valid;
+`endif //  TCU_OP
+`else  // Not EXT_TCU_ENABLE
+    assign txbar_bus_if.valid = dxa_txbar_bus_if.valid || dxa_txbar_attach_if.valid;
+    assign txbar_bus_if.data.is_done = dxa_txbar_bus_if.valid;
+    assign txbar_bus_if.data.addr = dxa_txbar_bus_if.valid ? dxa_txbar_bus_if.data.addr : dxa_txbar_attach_if.data.addr;
+    assign dxa_txbar_bus_if.ready = txbar_bus_if.ready;
+    assign dxa_txbar_attach_if.ready = txbar_bus_if.ready && ~dxa_txbar_bus_if.valid;
+`endif // EXT_TCU_ENABLE
+`else  // Not EXT_DXA_ENABLE
+`ifdef EXT_TCU_ENABLE
+`ifdef TCU_OP
+    assign txbar_bus_if.valid = tcu_txbar_bus_if.valid;
+    assign txbar_bus_if.data  = tcu_txbar_bus_if.data;
+    assign tcu_txbar_bus_if.ready = txbar_bus_if.ready;
 `else
     assign txbar_bus_if.valid = 1'b0;
     assign txbar_bus_if.data = 'x;
     `UNUSED_VAR (txbar_bus_if.ready)
-`endif
+`endif // TCU_OP
+`else  // Not EXT_TCU_ENABLE
+    assign txbar_bus_if.valid = 1'b0;
+    assign txbar_bus_if.data = 'x;
+    `UNUSED_VAR (txbar_bus_if.ready)
+`endif // EXT_TCU_ENABLE
+`endif // EXT_DXA_ENABLE
+
+    // Debugging Trace
+    always @(posedge clk) begin
+        if (~reset) begin
+        `ifdef EXT_DXA_ENABLE
+            `ifdef EXT_TCU_ENABLE
+                `ifdef TCU_OP
+                    if ((dxa_txbar_bus_if.valid && dxa_txbar_bus_if.ready)
+                     || (dxa_txbar_attach_if.valid && dxa_txbar_attach_if.ready)
+                     || (tcu_txbar_bus_if.valid && tcu_txbar_bus_if.ready)) begin
+                        `TRACE(1, ("%t: [sfu-txbar] in: dxa_mem(v=%0b r=%0b a=%0d d=%0b) dxa_setup(v=%0b r=%0b a=%0d d=%0b) tcu(v=%0b r=%0b a=%0d d=%0b)\n",
+                            $time,
+                            dxa_txbar_bus_if.valid, dxa_txbar_bus_if.ready, dxa_txbar_bus_if.data.addr, dxa_txbar_bus_if.data.is_done,
+                            dxa_txbar_attach_if.valid, dxa_txbar_attach_if.ready, dxa_txbar_attach_if.data.addr, dxa_txbar_attach_if.data.is_done,
+                            tcu_txbar_bus_if.valid, tcu_txbar_bus_if.ready, tcu_txbar_bus_if.data.addr, tcu_txbar_bus_if.data.is_done))
+                    end
+                `else
+                    if ((dxa_txbar_bus_if.valid && dxa_txbar_bus_if.ready)
+                     || (dxa_txbar_attach_if.valid && dxa_txbar_attach_if.ready)) begin
+                        `TRACE(1, ("%t: [sfu-txbar] in: dxa_mem(v=%0b r=%0b a=%0d d=%0b) dxa_setup(v=%0b r=%0b a=%0d d=%0b)\n",
+                            $time,
+                            dxa_txbar_bus_if.valid, dxa_txbar_bus_if.ready, dxa_txbar_bus_if.data.addr, dxa_txbar_bus_if.data.is_done,
+                            dxa_txbar_attach_if.valid, dxa_txbar_attach_if.ready, dxa_txbar_attach_if.data.addr, dxa_txbar_attach_if.data.is_done))
+                    end
+                `endif
+            `else
+                if ((dxa_txbar_bus_if.valid && dxa_txbar_bus_if.ready)
+                 || (dxa_txbar_attach_if.valid && dxa_txbar_attach_if.ready)) begin
+                    `TRACE(1, ("%t: [sfu-txbar] in: dxa_mem(v=%0b r=%0b a=%0d d=%0b) dxa_setup(v=%0b r=%0b a=%0d d=%0b)\n",
+                        $time,
+                        dxa_txbar_bus_if.valid, dxa_txbar_bus_if.ready, dxa_txbar_bus_if.data.addr, dxa_txbar_bus_if.data.is_done,
+                        dxa_txbar_attach_if.valid, dxa_txbar_attach_if.ready, dxa_txbar_attach_if.data.addr, dxa_txbar_attach_if.data.is_done))
+                end
+            `endif
+        `else
+            `ifdef EXT_TCU_ENABLE
+                `ifdef TCU_OP
+                    if (tcu_txbar_bus_if.valid && tcu_txbar_bus_if.ready) begin
+                        `TRACE(1, ("%t: [sfu-txbar] in: tcu(v=%0b r=%0b a=%0d d=%0b)\n",
+                            $time, tcu_txbar_bus_if.valid, tcu_txbar_bus_if.ready, tcu_txbar_bus_if.data.addr, tcu_txbar_bus_if.data.is_done))
+                    end
+                `endif
+            `endif
+        `endif
+            if (txbar_bus_if.valid && txbar_bus_if.ready) begin
+                `TRACE(1, ("%t: [sfu-txbar] out: v=%0b r=%0b a=%0d d=%0b\n",
+                    $time, txbar_bus_if.valid, txbar_bus_if.ready, txbar_bus_if.data.addr, txbar_bus_if.data.is_done))
+            end
+        end
+    end
 
     VX_lane_gather #(
         .BLOCK_SIZE (BLOCK_SIZE),

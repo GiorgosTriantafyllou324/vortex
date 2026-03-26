@@ -122,6 +122,7 @@ module VX_uop_sequencer import
     );
 
 `ifdef EXT_TCU_ENABLE
+`ifndef TCU_OP
     // ------------------------------------------------------------------
     // TCU uop expander
     // ------------------------------------------------------------------
@@ -142,6 +143,12 @@ module VX_uop_sequencer import
         .ibuf_out  (uop_out_data[UOP_TCU]),
         .uop_count (uop_out_count[UOP_TCU])
     );
+
+`else   
+    assign uop_in_valid[UOP_TCU]  = 1'b0;
+    assign uop_out_data[UOP_TCU]  = '0;
+    assign uop_out_count[UOP_TCU] = '0;
+`endif
 `endif
 
 // DXA uop expander removed: wgather-based DXA delivers all args in a single
