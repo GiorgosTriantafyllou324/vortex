@@ -121,13 +121,22 @@ module VX_csr_unit import VX_gpu_pkg::*; #(
     // Per-lane CTA thread IDs
     wire [NUM_LANES-1:0][`XLEN-1:0] cta_tid_x, cta_tid_y, cta_tid_z;
     for (genvar i = 0; i < NUM_LANES; ++i) begin : g_cta_tid
-        wire [CTA_TID_WIDTH:0] tx = (CTA_TID_WIDTH+1)'(sched_csr_if.cta_csrs.thread_idx[0]) + (CTA_TID_WIDTH+1)'(wtid[i]);
-        wire cx = (tx >= sched_csr_if.cta_csrs.block_dim[0]);
-        wire [CTA_TID_WIDTH:0] ty = (CTA_TID_WIDTH+1)'(sched_csr_if.cta_csrs.thread_idx[1]) + (CTA_TID_WIDTH+1)'(cx);
-        wire cy = (ty >= sched_csr_if.cta_csrs.block_dim[1]);
-        assign cta_tid_x[i] = cx ? `XLEN'(tx) - `XLEN'(sched_csr_if.cta_csrs.block_dim[0]) : `XLEN'(tx);
-        assign cta_tid_y[i] = cy ? `XLEN'(ty) - `XLEN'(sched_csr_if.cta_csrs.block_dim[1]) : `XLEN'(ty);
-        assign cta_tid_z[i] = `XLEN'(sched_csr_if.cta_csrs.thread_idx[2]) + `XLEN'(cy);
+        // wire [CTA_TID_WIDTH:0] tx = (CTA_TID_WIDTH+1)'(sched_csr_if.cta_csrs.thread_idx[0]) + (CTA_TID_WIDTH+1)'(wtid[i]);
+        // wire cx = (tx >= sched_csr_if.cta_csrs.block_dim[0]);
+        // wire [CTA_TID_WIDTH:0] ty = (CTA_TID_WIDTH+1)'(sched_csr_if.cta_csrs.thread_idx[1]) + (CTA_TID_WIDTH+1)'(cx);
+        // wire cy = (ty >= sched_csr_if.cta_csrs.block_dim[1]);
+        // assign cta_tid_x[i] = cx ? `XLEN'(tx) - `XLEN'(sched_csr_if.cta_csrs.block_dim[0]) : `XLEN'(tx);
+        // assign cta_tid_y[i] = cy ? `XLEN'(ty) - `XLEN'(sched_csr_if.cta_csrs.block_dim[1]) : `XLEN'(ty);
+        // assign cta_tid_z[i] = `XLEN'(sched_csr_if.cta_csrs.thread_idx[2]) + `XLEN'(cy);
+        wire [`XLEN-1:0] block_dim_x = `XLEN'(sched_csr_if.cta_csrs.block_dim[0]);
+        wire [`XLEN-1:0] block_dim_y = `XLEN'(sched_csr_if.cta_csrs.block_dim[1]);
+        wire [`XLEN-1:0] tx_w = `XLEN'(sched_csr_if.cta_csrs.thread_idx[0]) + wtid[i];
+        wire [`XLEN-1:0] tx_wraps = (block_dim_x != 0) ? (tx_w / block_dim_x) : '0;
+        wire [`XLEN-1:0] ty_w = `XLEN'(sched_csr_if.cta_csrs.thread_idx[1]) + tx_wraps;
+        wire [`XLEN-1:0] ty_wraps = (block_dim_y != 0) ? (ty_w / block_dim_y) : '0;
+        assign cta_tid_x[i] = (block_dim_x != 0) ? (tx_w % block_dim_x) : '0;
+        assign cta_tid_y[i] = (block_dim_y != 0) ? (ty_w % block_dim_y) : '0;
+        assign cta_tid_z[i] = `XLEN'(sched_csr_if.cta_csrs.thread_idx[2]) + ty_wraps;
     end
 
     always @(*) begin

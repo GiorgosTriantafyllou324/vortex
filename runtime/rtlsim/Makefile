@@ -36,7 +36,7 @@ all: $(DESTDIR)/$(PROJECT)
 driver: $(DESTDIR)/librtlsim.so
 
 $(DESTDIR)/librtlsim.so: force
-	DESTDIR=$(DESTDIR) $(MAKE) -C $(ROOT_DIR)/sim/rtlsim $(DESTDIR)/librtlsim.so
+	DESTDIR=$(DESTDIR) $(if $(DEBUG),DEBUG=$(DEBUG)) CONFIGS="$(CONFIGS)" $(MAKE) -C $(ROOT_DIR)/sim/rtlsim $(DESTDIR)/librtlsim.so
 
 $(DESTDIR)/$(PROJECT): $(SRCS) $(DESTDIR)/librtlsim.so $(CONFIG_FILE)
 	$(CXX) $(CXXFLAGS) $(SRCS) $(LDFLAGS) -o $@
@@ -52,7 +52,7 @@ $(CONFIG_FILE): force
 	fi
 
 clean-driver:
-	DESTDIR=$(DESTDIR) $(MAKE) -C $(ROOT_DIR)/sim/rtlsim clean-lib
+	DESTDIR=$(DESTDIR) $(if $(DEBUG),DEBUG=$(DEBUG)) CONFIGS="$(CONFIGS)" $(MAKE) -C $(ROOT_DIR)/sim/rtlsim clean-lib
 
 clean-runtime:
 	rm -f $(DESTDIR)/$(PROJECT)
