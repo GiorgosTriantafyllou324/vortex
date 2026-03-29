@@ -128,6 +128,7 @@ module VX_csr_unit import VX_gpu_pkg::*; #(
         // assign cta_tid_x[i] = cx ? `XLEN'(tx) - `XLEN'(sched_csr_if.cta_csrs.block_dim[0]) : `XLEN'(tx);
         // assign cta_tid_y[i] = cy ? `XLEN'(ty) - `XLEN'(sched_csr_if.cta_csrs.block_dim[1]) : `XLEN'(ty);
         // assign cta_tid_z[i] = `XLEN'(sched_csr_if.cta_csrs.thread_idx[2]) + `XLEN'(cy);
+        /* This fixes the 32-thread issue */
         wire [`XLEN-1:0] block_dim_x = `XLEN'(sched_csr_if.cta_csrs.block_dim[0]);
         wire [`XLEN-1:0] block_dim_y = `XLEN'(sched_csr_if.cta_csrs.block_dim[1]);
         wire [`XLEN-1:0] tx_w = `XLEN'(sched_csr_if.cta_csrs.thread_idx[0]) + wtid[i];

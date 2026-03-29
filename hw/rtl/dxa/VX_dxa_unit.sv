@@ -72,6 +72,8 @@ module VX_dxa_unit import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
         wire [NB_BITS-1:0] setup_bar_slot;
         wire [NW_BITS-1:0] setup_bar_owner;
 
+        `UNUSED_VAR(req_fire);
+
         // Treat X/unknown valid as 0 and add a short boot guard to avoid
         // reset-exit ghost traffic on DXA request/response channels.
         assign issue_valid_safe = boot_ready && (execute_if.valid === 1'b1);
@@ -79,10 +81,14 @@ module VX_dxa_unit import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
         // Every DXA instruction is a combined setup+issue: always send txbar.
         assign req_tx_ready = txbar_bus_if.ready;
 
-        // Gate response buffer accept on ALL downstream ready signals.
+        // Retire the DXA instruction only when both downstream consumers can
+        // accept it in the same cycle.
         assign issue_valid_in = issue_valid_safe && dxa_req_bus_if.req_ready && req_tx_ready;
         assign execute_if.ready = issue_ready_in && dxa_req_bus_if.req_ready && req_tx_ready && ~reset;
 
+        // Break the ready/valid loop by not feeding DXA req_ready back into
+        // req_valid. The request is only presented when txbar is ready, while
+        // the txbar setup is only presented once the DXA side is ready.
         assign dxa_req_bus_if.req_valid = issue_valid_safe && issue_ready_in && req_tx_ready;
 
         // Populate bus with all decoded fields from 4 lanes
@@ -124,8 +130,11 @@ module VX_dxa_unit import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
             assign setup_bar_addr = setup_bar_slot;
         end
 
-        assign req_fire = boot_ready && dxa_req_bus_if.req_valid && dxa_req_bus_if.req_ready;
-        assign tx_setup_valid = req_fire;  // every DXA instruction registers a barrier
+        // assign req_fire = boot_ready && dxa_req_bus_if.req_valid && dxa_req_bus_if.req_ready;
+        // assign tx_setup_valid = req_fire;  // every DXA instruction registers a barrier
+        assign req_fire = boot_ready && issue_valid_safe && issue_ready_in
+                        && dxa_req_bus_if.req_ready && req_tx_ready;
+        assign tx_setup_valid = issue_valid_safe && issue_ready_in && dxa_req_bus_if.req_ready;
         assign txbar_bus_if.valid        = tx_setup_valid;
         assign txbar_bus_if.data.addr    = setup_bar_addr;
         assign txbar_bus_if.data.is_done = 1'b0;
