@@ -383,7 +383,7 @@ module VX_local_mem import VX_gpu_pkg::*; #(
                     dxa_lm_back_to_back_r <= dxa_lm_back_to_back_r + 32'd1;
                 end
 
-                $display("%0t: %s DXA_LMEM_WR addr=0x%0h eff_bytes=%0d banks_active=%0d b2b=%0b",
+                $display("%t: %s DXA_LMEM_WR addr=0x%0h eff_bytes=%0d banks_active=%0d b2b=%0b",
                     $time, INSTANCE_ID, dxa_bank_wr_if.wr_addr, eff,
                     $countones(dxa_bank_wr_fire), dxa_lm_prev_fire_r);
             end
