@@ -591,14 +591,14 @@ module VX_decode import VX_gpu_pkg::*; #(
                     end
                 `endif
                 `ifdef EXT_DXA_ENABLE
-                    7'h03: begin // DXA issue (dimension-specific)
+                    7'h03: begin // DXA issue / retile
                         // funct3 encodes dimensionality: 0=1D .. 4=5D.
                         // funct3=5: 2D multicast (EXT_DXA_MULTICAST_ENABLE).
-                        // Expanded into micro-ops by VX_dxa_uops.
+                        // funct3=6: 1D TILESIZE01-only descriptor retile.
                     `ifdef EXT_DXA_MULTICAST_ENABLE
-                        if (funct3 <= 3'd5) begin
+                        if (funct3 <= 3'd6) begin
                     `else
-                        if (funct3 <= 3'd4) begin
+                        if (funct3 <= 3'd6) begin
                     `endif
                             ex_type = EX_SFU;
                             op_type = INST_OP_BITS'(INST_SFU_DXA);

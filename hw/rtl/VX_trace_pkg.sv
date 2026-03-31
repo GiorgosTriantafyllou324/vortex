@@ -264,6 +264,7 @@ package VX_trace_pkg;
                         3'd3: `TRACE(level, ("DXA.COORD23"))
                         3'd4: `TRACE(level, ("DXA.ISSUE"))
                         3'd5: `TRACE(level, ("DXA.LAUNCH"))
+                        3'd6: `TRACE(level, ("DXA.RETILE"))
                         default: `TRACE(level, ("DXA.?"))
                     endcase
                 end

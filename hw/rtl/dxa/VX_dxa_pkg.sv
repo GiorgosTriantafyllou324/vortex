@@ -26,11 +26,12 @@ package VX_dxa_pkg;
     localparam DXA_OP_COORD01 = 3'd1;
     localparam DXA_OP_COORD23 = 3'd2;
     localparam DXA_OP_ISSUE   = 3'd3;
+    localparam DXA_OP_RETILE  = 3'd6;
     // Architected funct3 encoding: 0=1D, 1=2D, 2=3D, 3=4D, 4=5D.
-    // All variants are expanded into micro-ops by VX_dxa_uops.
+    // funct3=6 updates TILESIZE01 for 1D descriptors only.
 
-    // smem_addr(XLEN) + meta(XLEN) + coords[5](5*XLEN) = 7*XLEN total
-    localparam DXA_REQ_DATAW = NC_WIDTH + UUID_WIDTH + NW_WIDTH + (7 * `XLEN)
+    // op(3) + smem_addr(XLEN) + meta(XLEN) + coords[5](5*XLEN) = 3 + 7*XLEN.
+    localparam DXA_REQ_DATAW = NC_WIDTH + UUID_WIDTH + NW_WIDTH + 3 + (7 * `XLEN)
 `ifdef EXT_DXA_MULTICAST_ENABLE
         + 1 + `NUM_WARPS  // is_multicast + cta_mask
 `endif

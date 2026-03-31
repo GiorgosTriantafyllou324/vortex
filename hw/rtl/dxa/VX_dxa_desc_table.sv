@@ -20,6 +20,9 @@ module VX_dxa_desc_table import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
     input wire reset,
 
     VX_dcr_bus_if.slave dcr_bus_if,
+    input wire tile_write_valid,
+    input wire [DXA_DESC_SLOT_W-1:0] tile_write_slot,
+    input wire [31:0] tile_write_data,
 
     input wire [NUM_READ_PORTS-1:0][DXA_DESC_SLOT_W-1:0] read_desc_slot,
 
@@ -62,6 +65,8 @@ module VX_dxa_desc_table import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
     always @(posedge clk) begin
         if (dcr_dxa_desc_write) begin
             dxa_desc_r[dcr_desc_slot][dcr_desc_word] <= dcr_bus_if.req_data.data;
+        end else if (tile_write_valid) begin
+            dxa_desc_r[tile_write_slot][`VX_DCR_DXA_DESC_TILESIZE01_OFF] <= tile_write_data;
         end
     end
 

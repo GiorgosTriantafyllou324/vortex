@@ -67,6 +67,7 @@ module VX_dxa_unit import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
         wire issue_valid_safe;
         wire req_tx_ready;
         wire req_fire;
+        wire issue_is_retile;
         wire [BAR_ADDR_W-1:0] setup_bar_addr;
         wire tx_setup_valid;
         wire [NB_BITS-1:0] setup_bar_slot;
@@ -77,9 +78,11 @@ module VX_dxa_unit import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
         // Treat X/unknown valid as 0 and add a short boot guard to avoid
         // reset-exit ghost traffic on DXA request/response channels.
         assign issue_valid_safe = boot_ready && (execute_if.valid === 1'b1);
+        assign issue_is_retile = (execute_if.data.op_args.dxa.op == DXA_OP_RETILE);
 
-        // Every DXA instruction is a combined setup+issue: always send txbar.
-        assign req_tx_ready = txbar_bus_if.ready;
+        // Descriptor retile updates bypass txbar because they do not allocate
+        // or release a barrier slot.
+        assign req_tx_ready = issue_is_retile || txbar_bus_if.ready;
 
         // Retire the DXA instruction only when both downstream consumers can
         // accept it in the same cycle.
@@ -95,6 +98,7 @@ module VX_dxa_unit import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
         assign dxa_req_bus_if.req_data.core_id   = NC_WIDTH'(CORE_ID);
         assign dxa_req_bus_if.req_data.uuid      = execute_if.data.header.uuid;
         assign dxa_req_bus_if.req_data.wid       = execute_if.data.header.wid;
+        assign dxa_req_bus_if.req_data.op        = execute_if.data.op_args.dxa.op;
         assign dxa_req_bus_if.req_data.smem_addr = lane0_rs1;
         assign dxa_req_bus_if.req_data.meta      = lane1_rs1;
         assign dxa_req_bus_if.req_data.coords[0] = lane2_rs1;
@@ -104,9 +108,9 @@ module VX_dxa_unit import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
         assign dxa_req_bus_if.req_data.coords[4] = lane2_rs2;
 
     `ifdef EXT_DXA_MULTICAST_ENABLE
-        // Multicast: funct3 >= 5 signals multicast variant.
+        // Multicast uses funct3=5. Retile (funct3=6) is a separate path.
         // rs2 lane 0 carries the cta_mask instead of coord2.
-        wire is_multicast = (execute_if.data.op_args.dxa.op >= 3'd5);
+        wire is_multicast = (execute_if.data.op_args.dxa.op == 3'd5);
         assign dxa_req_bus_if.req_data.is_multicast = is_multicast;
         assign dxa_req_bus_if.req_data.cta_mask = is_multicast
             ? execute_if.data.rs2_data[0][`NUM_WARPS-1:0]
@@ -134,7 +138,8 @@ module VX_dxa_unit import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
         // assign tx_setup_valid = req_fire;  // every DXA instruction registers a barrier
         assign req_fire = boot_ready && issue_valid_safe && issue_ready_in
                         && dxa_req_bus_if.req_ready && req_tx_ready;
-        assign tx_setup_valid = issue_valid_safe && issue_ready_in && dxa_req_bus_if.req_ready;
+        assign tx_setup_valid = ~issue_is_retile && issue_valid_safe
+                              && issue_ready_in && dxa_req_bus_if.req_ready;
         assign txbar_bus_if.valid        = tx_setup_valid;
         assign txbar_bus_if.data.addr    = setup_bar_addr;
         assign txbar_bus_if.data.is_done = 1'b0;
@@ -153,8 +158,9 @@ module VX_dxa_unit import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
         always @(posedge clk) begin
             if (~reset) begin
                 if (req_fire) begin
-                    `TRACE(1, ("%t: %s dxa-req: wid=%0d smem=0x%0h meta=0x%0h c0=%0d c1=%0d c2=%0d c3=%0d c4=%0d\n",
-                        $time, INSTANCE_ID, execute_if.data.header.wid,
+                    `TRACE(1, ("%t: %s dxa-req: op=%0d wid=%0d smem=0x%0h meta=0x%0h c0=%0d c1=%0d c2=%0d c3=%0d c4=%0d\n",
+                        $time, INSTANCE_ID, execute_if.data.op_args.dxa.op,
+                        execute_if.data.header.wid,
                         lane0_rs1, lane1_rs1, lane2_rs1, lane3_rs1,
                         lane0_rs2, lane1_rs2, lane2_rs2))
                 end

@@ -240,7 +240,7 @@ module VX_socket import VX_gpu_pkg::*;
     // DXA control request: N:1 arbitration from per-core to cluster
     VX_dxa_req_bus_if per_core_dxa_req_bus_if[`SOCKET_SIZE]();
 
-    localparam DXA_REQ_DATAW_LOCAL = NC_WIDTH + UUID_WIDTH + NW_WIDTH + (7 * `XLEN)
+    localparam DXA_REQ_DATAW_LOCAL = NC_WIDTH + UUID_WIDTH + NW_WIDTH + 3 + (7 * `XLEN)
 `ifdef EXT_DXA_MULTICAST_ENABLE
         + 1 + `NUM_WARPS
 `endif

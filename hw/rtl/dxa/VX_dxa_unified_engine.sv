@@ -59,6 +59,9 @@ module VX_dxa_unified_engine import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
         wire [NUM_DXA_UNITS-1:0][31:0] issue_size1_raw;
         wire [NUM_DXA_UNITS-1:0][31:0] issue_stride0_raw;
         wire [NUM_DXA_UNITS-1:0] worker_idle;
+        wire retile_write_valid;
+        wire [DXA_DESC_SLOT_W-1:0] retile_write_slot;
+        wire [31:0] retile_write_data;
 
     `ifdef EXT_DXA_MULTICAST_ENABLE
         wire [NUM_DXA_UNITS-1:0][31:0] issue_smem_stride;
@@ -71,6 +74,9 @@ module VX_dxa_unified_engine import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
             .clk            (clk),
             .reset          (reset),
             .dcr_bus_if     (dcr_bus_if),
+            .tile_write_valid(retile_write_valid),
+            .tile_write_slot (retile_write_slot),
+            .tile_write_data (retile_write_data),
             .read_desc_slot (issue_desc_slot),
             .read_base_addr (issue_base_addr),
             .read_desc_meta (issue_desc_meta),
@@ -97,6 +103,7 @@ module VX_dxa_unified_engine import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
         wire [NUM_DXA_UNITS-1:0][NC_WIDTH-1:0]         in_core_id;
         wire [NUM_DXA_UNITS-1:0][UUID_WIDTH-1:0]       in_uuid;
         wire [NUM_DXA_UNITS-1:0][NW_WIDTH-1:0]         in_wid;
+        wire [NUM_DXA_UNITS-1:0][2:0]                  in_op;
         wire [NUM_DXA_UNITS-1:0][`XLEN-1:0]            in_smem_addr;
         wire [NUM_DXA_UNITS-1:0][`XLEN-1:0]            in_meta;
         wire [NUM_DXA_UNITS-1:0][4:0][`XLEN-1:0]       in_coords;
@@ -112,6 +119,7 @@ module VX_dxa_unified_engine import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
             assign in_core_id[i]  = cluster_dxa_bus_if[i].req_data.core_id;
             assign in_uuid[i]     = cluster_dxa_bus_if[i].req_data.uuid;
             assign in_wid[i]      = cluster_dxa_bus_if[i].req_data.wid;
+            assign in_op[i]       = cluster_dxa_bus_if[i].req_data.op;
             assign in_smem_addr[i]= cluster_dxa_bus_if[i].req_data.smem_addr;
             assign in_meta[i]     = cluster_dxa_bus_if[i].req_data.meta;
             assign in_coords[i]   = cluster_dxa_bus_if[i].req_data.coords;
@@ -139,7 +147,9 @@ module VX_dxa_unified_engine import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
         wire [NUM_DXA_UNITS-1:0] issue_grant_onehot;
         wire [`UP(`CLOG2(NUM_DXA_UNITS))-1:0] issue_grant_idx;
         wire issue_grant_valid;
+        wire issue_grant_ready;
         wire issue_fifo_ready;
+        wire issue_grant_is_retile;
 
         VX_rr_arbiter #(
             .NUM_REQS (NUM_DXA_UNITS)
@@ -150,12 +160,16 @@ module VX_dxa_unified_engine import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
             .grant_index (issue_grant_idx),
             .grant_onehot(issue_grant_onehot),
             .grant_valid (issue_grant_valid),
-            .grant_ready (issue_fifo_ready)
+            .grant_ready (issue_grant_ready)
         );
+
+        assign issue_grant_is_retile = issue_grant_valid
+                                    && (in_op[issue_grant_idx] == DXA_OP_RETILE);
+        assign issue_grant_ready = issue_grant_is_retile || issue_fifo_ready;
 
         // ISSUE FIFO: buffers requests until a worker is available.
         // Entry = {core_id, uuid, wid, bar_addr, desc_slot, smem_addr, coords[5]}
-        wire issue_fifo_enq = issue_grant_valid && issue_fifo_ready;
+        wire issue_fifo_enq = issue_grant_valid && ~issue_grant_is_retile && issue_fifo_ready;
         wire [ISSUE_FIFO_W-1:0] issue_fifo_din = {
             in_core_id[issue_grant_idx],
             in_uuid[issue_grant_idx],
@@ -255,8 +269,12 @@ module VX_dxa_unified_engine import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
         // ================================================================
         for (genvar i = 0; i < NUM_DXA_UNITS; ++i) begin : g_ready
             assign cluster_dxa_bus_if[i].req_ready =
-                in_valid[i] && issue_grant_onehot[i] && issue_fifo_ready;
+                in_valid[i] && issue_grant_onehot[i] && issue_grant_ready;
         end
+
+        assign retile_write_valid = issue_grant_valid && issue_grant_is_retile;
+        assign retile_write_slot  = in_desc_slot[issue_grant_idx];
+        assign retile_write_data  = {16'b0, in_coords[issue_grant_idx][0][15:0]};
 
         // ================================================================
         // Worker instantiation
@@ -338,6 +356,13 @@ module VX_dxa_unified_engine import VX_gpu_pkg::*, VX_dxa_pkg::*; #(
                         $time, INSTANCE_ID, issue_grant_idx,
                         in_core_id[issue_grant_idx], in_wid[issue_grant_idx],
                         in_bar_addr[issue_grant_idx], in_desc_slot[issue_grant_idx]))
+                end
+                if (retile_write_valid) begin
+                    `TRACE(1, ("%t: %s retile-1d: input=%0d desc=%0d tile0=%0d\n",
+                        $time, INSTANCE_ID, issue_grant_idx, retile_write_slot,
+                        retile_write_data[15:0]))
+                    $write("DXA_TL,%0d,RETILE1D,desc=%0d,tile0=%0d\n",
+                        $time, retile_write_slot, retile_write_data[15:0]);
                 end
                 if (issue_dispatch) begin
                     `TRACE(1, ("%t: %s dispatch-issue: worker=%0d core=%0d wid=%0d bar=%0d desc=%0d\n",
