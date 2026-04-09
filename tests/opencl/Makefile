@@ -14,7 +14,6 @@ all:
 	$(MAKE) -C oclprintf
 	$(MAKE) -C dotproduct
 	$(MAKE) -C transpose
-	$(MAKE) -C spmv
 	$(MAKE) -C stencil
 	$(MAKE) -C lbm
 	$(MAKE) -C nearn
@@ -36,7 +35,6 @@ run-simx:
 	$(MAKE) -C oclprintf run-simx
 	$(MAKE) -C dotproduct run-simx
 #   $(MAKE) -C transpose run-simx
-	$(MAKE) -C spmv run-simx
 	$(MAKE) -C stencil run-simx
 	$(MAKE) -C nearn run-simx
 	$(MAKE) -C guassian run-simx
@@ -57,7 +55,6 @@ run-rtlsim:
 	$(MAKE) -C oclprintf run-rtlsim
 	$(MAKE) -C dotproduct run-rtlsim
 #	$(MAKE) -C transpose run-rtlsim
-	$(MAKE) -C spmv run-rtlsim
 	$(MAKE) -C stencil run-rtlsim
 	$(MAKE) -C nearn run-rtlsim
 	$(MAKE) -C guassian run-rtlsim
@@ -78,7 +75,6 @@ clean:
 	$(MAKE) -C oclprintf clean
 	$(MAKE) -C dotproduct clean
 	$(MAKE) -C transpose clean
-	$(MAKE) -C spmv clean
 	$(MAKE) -C stencil clean
 	$(MAKE) -C lbm clean
 	$(MAKE) -C nearn clean
