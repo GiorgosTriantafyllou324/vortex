@@ -1,4 +1,5 @@
 #include "common.h"
+#include <algorithm>
 #include <chrono>
 #include <climits>
 #include <cmath>
@@ -764,6 +765,7 @@ vx_buffer_h B_buffer = nullptr;
 vx_buffer_h C_buffer = nullptr;
 vx_buffer_h meta_buffer = nullptr;
 vx_buffer_h cycles_buffer = nullptr;
+vx_buffer_h metrics_buffer = nullptr;
 vx_buffer_h krnl_buffer = nullptr;
 vx_buffer_h args_buffer = nullptr;
 kernel_arg_t kernel_arg = {};
@@ -811,6 +813,7 @@ void cleanup() {
     vx_mem_free(C_buffer);
     vx_mem_free(meta_buffer);
     vx_mem_free(cycles_buffer);
+    vx_mem_free(metrics_buffer);
     vx_mem_free(krnl_buffer);
     vx_mem_free(args_buffer);
     vx_dev_close(device);
@@ -868,6 +871,7 @@ int main(int argc, char *argv[]) {
   size_t sizeA = (M * K) / 2;
   size_t sizeB = K * N;
   size_t sizeC = M * N;
+  constexpr size_t metrics_size = 2;
 
   std::cout << "input data type: " << vt::ITYPE::name << " (id=" << vt::ITYPE::id << ")" << std::endl;
   std::cout << "output data type: " << vt::OTYPE::name << " (id=" << vt::OTYPE::id << ")" << std::endl;
@@ -905,13 +909,16 @@ int main(int argc, char *argv[]) {
   RT_CHECK(vx_mem_address(meta_buffer, &kernel_arg.meta_addr));
 
   uint32_t num_blocks = grid_dim[0] * grid_dim[1];
-  RT_CHECK(vx_mem_alloc(device, num_blocks * sizeof(uint32_t), VX_MEM_WRITE, &cycles_buffer));
+  RT_CHECK(vx_mem_alloc(device, num_blocks * 2 * sizeof(uint64_t), VX_MEM_WRITE, &cycles_buffer));
   RT_CHECK(vx_mem_address(cycles_buffer, &kernel_arg.cycles_addr));
+  RT_CHECK(vx_mem_alloc(device, metrics_size * sizeof(uint64_t), VX_MEM_READ_WRITE, &metrics_buffer));
+  RT_CHECK(vx_mem_address(metrics_buffer, &kernel_arg.metrics_addr));
 
   std::cout << "A_addr=0x" << std::hex << kernel_arg.A_addr << std::endl;
   std::cout << "B_addr=0x" << std::hex << kernel_arg.B_addr << std::endl;
   std::cout << "C_addr=0x" << std::hex << kernel_arg.C_addr << std::endl;
   std::cout << "meta_addr=0x" << std::hex << kernel_arg.meta_addr << std::endl;
+  std::cout << std::dec;
 
   // generate source data
   // Generate full matrix A (M × K), prune in-place, then compress to M × K/2
@@ -938,6 +945,7 @@ int main(int argc, char *argv[]) {
   }
 
   std::vector<itype_t> h_B(sizeB);
+  std::vector<uint64_t> h_metrics(metrics_size, 0);
   for (uint32_t i = 0; i < sizeB; ++i) {
     h_B[i] = generate_B_value<vt::ITYPE>();
   }
@@ -974,6 +982,11 @@ int main(int argc, char *argv[]) {
     RT_CHECK(vx_copy_to_dev(meta_buffer, h_meta.data(), 0, meta_buf_entries * sizeof(uint32_t)));
   }
 
+  {
+    std::cout << "upload metrics buffer" << std::endl;
+    RT_CHECK(vx_copy_to_dev(metrics_buffer, h_metrics.data(), 0, h_metrics.size() * sizeof(uint64_t)));
+  }
+
   // upload program
   std::cout << "upload program" << std::endl;
   RT_CHECK(vx_upload_kernel_file(device, kernel_file, &krnl_buffer));
@@ -996,14 +1009,30 @@ int main(int argc, char *argv[]) {
   double elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(time_end - time_start).count();
   printf("Elapsed time: %lg ms\n", elapsed);
 
+  std::cout << "download metrics buffer" << std::endl;
+  RT_CHECK(vx_copy_from_dev(h_metrics.data(), metrics_buffer, 0, h_metrics.size() * sizeof(uint64_t)));
+
   // download and report cycle counts
   {
-    std::vector<uint32_t> h_cycles(num_blocks);
-    RT_CHECK(vx_copy_from_dev(h_cycles.data(), cycles_buffer, 0, num_blocks * sizeof(uint32_t)));
-    uint32_t max_cycles = 0;
-    for (auto c : h_cycles) max_cycles = std::max(max_cycles, c);
-    printf("TCU_CYCLES: max=%u (across %u blocks)\n", max_cycles, num_blocks);
+    std::vector<uint64_t> h_cycles(num_blocks * 2);
+    RT_CHECK(vx_copy_from_dev(h_cycles.data(), cycles_buffer, 0, h_cycles.size() * sizeof(uint64_t)));
+    uint64_t first_body_cycle = ~uint64_t{0};
+    uint64_t last_body_cycle = 0;
+    uint64_t max_block_cycles = 0;
+    for (uint32_t i = 0; i < num_blocks; ++i) {
+      uint64_t start = h_cycles[2 * i + 0];
+      uint64_t end = h_cycles[2 * i + 1];
+      first_body_cycle = std::min(first_body_cycle, start);
+      last_body_cycle = std::max(last_body_cycle, end);
+      max_block_cycles = std::max(max_block_cycles, end - start);
+    }
+    h_metrics[0] = last_body_cycle - first_body_cycle;
+    printf("TCU_CYCLES: max-block=%lu, total-body=%lu (across %u blocks)\n",
+           max_block_cycles, h_metrics[0], num_blocks);
   }
+
+  std::cout << "Kernel body cycles: " << h_metrics[0] << std::endl;
+  std::cout << "Kernel body instructions: " << h_metrics[1] << std::endl;
 
   // download destination buffer
   std::vector<otype_t> h_C(sizeC);

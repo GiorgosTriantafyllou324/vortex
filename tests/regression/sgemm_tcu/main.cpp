@@ -1,4 +1,5 @@
 #include "common.h"
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <iostream>
@@ -669,6 +670,8 @@ vx_device_h device = nullptr;
 vx_buffer_h A_buffer = nullptr;
 vx_buffer_h B_buffer = nullptr;
 vx_buffer_h C_buffer = nullptr;
+vx_buffer_h cycles_buffer = nullptr;
+vx_buffer_h metrics_buffer = nullptr;
 vx_buffer_h krnl_buffer = nullptr;
 vx_buffer_h args_buffer = nullptr;
 kernel_arg_t kernel_arg = {};
@@ -707,6 +710,8 @@ void cleanup() {
     vx_mem_free(A_buffer);
     vx_mem_free(B_buffer);
     vx_mem_free(C_buffer);
+    vx_mem_free(cycles_buffer);
+    vx_mem_free(metrics_buffer);
     vx_mem_free(krnl_buffer);
     vx_mem_free(args_buffer);
     vx_dev_close(device);
@@ -761,8 +766,10 @@ int main(int argc, char *argv[]) {
   size_t sizeA = M * K;
   size_t sizeB = K * N;
   size_t sizeC = M * N;
+  constexpr size_t metrics_size = 2;
   uint32_t grid_dim[2]  = {N / cfg::tileN, M / cfg::tileM};
   uint32_t block_dim[2] = {(uint32_t)NT, 1};
+  uint32_t num_blocks = grid_dim[0] * grid_dim[1];
 
   std::cout << "input data type: " << vt::ITYPE::name << " (id=" << vt::ITYPE::id << ")" << std::endl;
   std::cout << "output data type: " << vt::OTYPE::name << " (id=" << vt::OTYPE::id << ")" << std::endl;
@@ -785,14 +792,20 @@ int main(int argc, char *argv[]) {
   RT_CHECK(vx_mem_address(B_buffer, &kernel_arg.B_addr));
   RT_CHECK(vx_mem_alloc(device, sizeC * sizeof(otype_t), VX_MEM_WRITE, &C_buffer));
   RT_CHECK(vx_mem_address(C_buffer, &kernel_arg.C_addr));
+  RT_CHECK(vx_mem_alloc(device, num_blocks * 2 * sizeof(uint64_t), VX_MEM_WRITE, &cycles_buffer));
+  RT_CHECK(vx_mem_address(cycles_buffer, &kernel_arg.cycles_addr));
+  RT_CHECK(vx_mem_alloc(device, metrics_size * sizeof(uint64_t), VX_MEM_READ_WRITE, &metrics_buffer));
+  RT_CHECK(vx_mem_address(metrics_buffer, &kernel_arg.metrics_addr));
 
   std::cout << "A_addr=0x" << std::hex << kernel_arg.A_addr << std::endl;
   std::cout << "B_addr=0x" << std::hex << kernel_arg.B_addr << std::endl;
   std::cout << "C_addr=0x" << std::hex << kernel_arg.C_addr << std::endl;
+  std::cout << std::dec;
 
   // generate source data
   std::vector<itype_t> h_A(sizeA);
   std::vector<itype_t> h_B(sizeB);
+  std::vector<uint64_t> h_metrics(metrics_size, 0);
   for (uint32_t i = 0; i < sizeA; ++i) {
     h_A[i] = generate_A_value<vt::ITYPE>();
   }
@@ -822,6 +835,11 @@ int main(int argc, char *argv[]) {
     }
   }
 
+  {
+    std::cout << "upload metrics buffer" << std::endl;
+    RT_CHECK(vx_copy_to_dev(metrics_buffer, h_metrics.data(), 0, h_metrics.size() * sizeof(uint64_t)));
+  }
+
   // upload program
   std::cout << "upload program" << std::endl;
   RT_CHECK(vx_upload_kernel_file(device, kernel_file, &krnl_buffer));
@@ -848,6 +866,20 @@ int main(int argc, char *argv[]) {
   std::vector<otype_t> h_C(sizeC);
   std::cout << "download destination buffer" << std::endl;
   RT_CHECK(vx_copy_from_dev(h_C.data(), C_buffer, 0, sizeC * sizeof(otype_t)));
+
+  std::cout << "download metrics buffer" << std::endl;
+  RT_CHECK(vx_copy_from_dev(h_metrics.data(), metrics_buffer, 0, h_metrics.size() * sizeof(uint64_t)));
+  std::vector<uint64_t> h_cycles(num_blocks * 2);
+  RT_CHECK(vx_copy_from_dev(h_cycles.data(), cycles_buffer, 0, h_cycles.size() * sizeof(uint64_t)));
+  uint64_t first_body_cycle = ~uint64_t{0};
+  uint64_t last_body_cycle = 0;
+  for (uint32_t i = 0; i < num_blocks; ++i) {
+    first_body_cycle = std::min(first_body_cycle, h_cycles[2 * i + 0]);
+    last_body_cycle = std::max(last_body_cycle, h_cycles[2 * i + 1]);
+  }
+  h_metrics[0] = last_body_cycle - first_body_cycle;
+  std::cout << "Kernel body cycles: " << h_metrics[0] << std::endl;
+  std::cout << "Kernel body instructions: " << h_metrics[1] << std::endl;
 
   // verify result
   std::cout << "verify result" << std::endl;
