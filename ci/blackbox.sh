@@ -40,6 +40,14 @@ add_option() {
     fi
 }
 
+run_build_cmd() {
+    if [ -n "$MAKE_LOCK_FILE" ]; then
+        flock "$MAKE_LOCK_FILE" sh -c "$1"
+    else
+        eval "$1"
+    fi
+}
+
 DEFAULTS() {
     DRIVER=simx
     APP=sgemm
@@ -110,7 +118,7 @@ build_driver() {
     [ -n "$CONFIGS" ] && cmd_opts=$(add_option "$cmd_opts" "CONFIGS=\"$CONFIGS\"")
     cmd_opts=$(add_option "$cmd_opts" "make -C $DRIVER_PATH > /dev/null")
     echo "Running: $cmd_opts"
-    eval "$cmd_opts"
+    run_build_cmd "$cmd_opts"
     status=$?
     if [ $status -ne 0 ]; then
         echo "Error building driver: $DRIVER_PATH"
@@ -150,8 +158,8 @@ main() {
 
     export VORTEX_PROFILING=$PERF_CLASS
 
-    make -C "$ROOT_DIR/hw" config > /dev/null
-    make -C "$ROOT_DIR/runtime/stub" > /dev/null
+    run_build_cmd "make -C \"$ROOT_DIR/hw\" config > /dev/null"
+    run_build_cmd "make -C \"$ROOT_DIR/runtime/stub\" > /dev/null"
 
     if [ $TEMPBUILD -eq 1 ]; then
         # setup temp directory
@@ -159,7 +167,7 @@ main() {
         mkdir -p "$TEMPDIR"
         # build stub driver
         echo "Running: DESTDIR=$TEMPDIR make -C $ROOT_DIR/runtime/stub"
-        DESTDIR="$TEMPDIR" make -C $ROOT_DIR/runtime/stub > /dev/null
+        run_build_cmd "DESTDIR=\"$TEMPDIR\" make -C \"$ROOT_DIR/runtime/stub\" > /dev/null"
         # register tempdir cleanup on exit
         trap "rm -rf $TEMPDIR" EXIT
     fi
