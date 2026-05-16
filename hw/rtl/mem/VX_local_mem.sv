@@ -155,13 +155,17 @@ module VX_local_mem import VX_gpu_pkg::*; #(
     end
 
 `ifdef EXT_DXA_ENABLE
-    // DXA bank writes: always accepted (priority over LSU at each bank SRAM)
-    assign dxa_bank_wr_if.wr_ready = 1'b1;
+    wire [NUM_BANKS-1:0] dxa_tcu_conflict;
+    wire dxa_wr_ready = ~(| dxa_tcu_conflict);
+
+    // DXA writes are all-or-nothing. TCU LMEM traffic has priority over DXA;
+    // DXA still preempts regular LSU traffic when no bank has selected TCU work.
+    assign dxa_bank_wr_if.wr_ready = dxa_wr_ready;
 
     // DXA completion detection: derive per-bank fire from shared valid + byteen
     wire [NUM_BANKS-1:0] dxa_bank_wr_fire;
     for (genvar i = 0; i < NUM_BANKS; ++i) begin : g_dxa_fire
-        assign dxa_bank_wr_fire[i] = dxa_bank_wr_if.wr_valid && (|dxa_bank_wr_if.wr_byteen[i]);
+        assign dxa_bank_wr_fire[i] = dxa_bank_wr_if.wr_valid && dxa_wr_ready && (|dxa_bank_wr_if.wr_byteen[i]);
     end
 
     VX_dxa_completion_detect #(
@@ -189,9 +193,17 @@ module VX_local_mem import VX_gpu_pkg::*; #(
     for (genvar i = 0; i < NUM_BANKS; ++i) begin : g_data_store
         wire bank_rsp_valid, bank_rsp_ready;
 
-        // DXA bank writes: priority over LSU at each bank SRAM
+        // DXA bank writes: priority over regular LSU at each bank SRAM.
     `ifdef EXT_DXA_ENABLE
-        wire dxa_wr_b = dxa_bank_wr_if.wr_valid && (|dxa_bank_wr_if.wr_byteen[i]);
+    `ifdef TCU_OP
+        localparam LMEM_ARB_SEL_BITS = `CLOG2(NUM_LSU_TOTAL);
+        wire req_is_tcu = (per_bank_req_tag[i][LMEM_ARB_SEL_BITS-1:0] == LMEM_ARB_SEL_BITS'(0));
+    `else
+        wire req_is_tcu = 1'b0;
+    `endif
+        assign dxa_tcu_conflict[i] = per_bank_req_valid[i]
+                                  && req_is_tcu;
+        wire dxa_wr_b = dxa_bank_wr_if.wr_valid && dxa_wr_ready && (|dxa_bank_wr_if.wr_byteen[i]);
         wire [BANK_ADDR_WIDTH-1:0] bank_sram_addr  = dxa_wr_b ? dxa_bank_wr_if.wr_addr : per_bank_req_addr[i];
         wire [WORD_WIDTH-1:0]      bank_sram_wdata = dxa_wr_b ? dxa_bank_wr_if.wr_data[i]   : per_bank_req_data[i];
         wire [WORD_SIZE-1:0]       bank_sram_wren  = dxa_wr_b ? dxa_bank_wr_if.wr_byteen[i] : per_bank_req_byteen[i];

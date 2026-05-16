@@ -96,6 +96,21 @@ module VX_mem_unit import VX_gpu_pkg::*; #(
         .TAG_WIDTH (LMEM_TAG_WIDTH)
     ) lmem_arb_if[1]();
 
+`ifdef TCU_OP
+    VX_lsu_mem_if #(
+        .NUM_LANES (`NUM_LSU_LANES),
+        .DATA_SIZE (LSU_WORD_SIZE),
+        .TAG_WIDTH (LSU_TAG_WIDTH)
+    ) lmem_arb_in_if[NUM_LSU_TOTAL]();
+
+    // Fixed-priority arbiters grant the lowest-numbered input first.
+    // Put TCU in slot 0 so its LMEM traffic can preempt LSU traffic.
+    `ASSIGN_VX_MEM_BUS_IF (lmem_arb_in_if[0], lsu_lmem_if[`NUM_LSU_BLOCKS]);
+    for (genvar i = 0; i < `NUM_LSU_BLOCKS; ++i) begin : g_lmem_arb_in_if
+        `ASSIGN_VX_MEM_BUS_IF (lmem_arb_in_if[i + 1], lsu_lmem_if[i]);
+    end
+`endif
+
     VX_lsu_mem_arb #(
         .NUM_INPUTS (NUM_LSU_TOTAL),
         .NUM_OUTPUTS(1),
@@ -106,13 +121,17 @@ module VX_mem_unit import VX_gpu_pkg::*; #(
         .OUT_TAG_WIDTH(LMEM_TAG_WIDTH),
     `endif
         .TAG_SEL_IDX(0),
-        .ARBITER    ("R"),
+        .ARBITER    ("P"),
         .REQ_OUT_BUF(0),
         .RSP_OUT_BUF(2)
     ) lmem_arb (
         .clk        (clk),
         .reset      (reset),
+    `ifdef TCU_OP
+        .bus_in_if  (lmem_arb_in_if),
+    `else
         .bus_in_if  (lsu_lmem_if),
+    `endif
         .bus_out_if (lmem_arb_if)
     );
 
