@@ -30,6 +30,8 @@ all:
 	$(MAKE) -C jacobi
 	$(MAKE) -C pathfinder
 	$(MAKE) -C softmax
+	$(MAKE) -C flashattention_tcu
+	$(MAKE) -C flashattention_tcu_virgo
 	$(MAKE) -C sgemm_tcu
 	$(MAKE) -C sgemm2_tcu
 	$(MAKE) -C sgemm_tcu_sp
@@ -140,6 +142,8 @@ clean:
 	$(MAKE) -C jacobi clean
 	$(MAKE) -C pathfinder clean
 	$(MAKE) -C softmax clean
+	$(MAKE) -C flashattention_tcu clean
+	$(MAKE) -C flashattention_tcu_virgo clean
 	$(MAKE) -C sgemm2_dxa clean
 	$(MAKE) -C async_barrier clean
 	$(MAKE) -C async_gbarrier clean
