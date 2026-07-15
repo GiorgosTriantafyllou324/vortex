@@ -598,6 +598,9 @@ package VX_gpu_pkg;
     // TCU_LD — warp-level load into a metadata SRAM namespace.
     localparam INST_TCU_LD         = 4'h5;
 `endif
+`ifdef TCU_OP
+    localparam INST_TCU_MMA_OP     = 4'h6;
+`endif
     localparam INST_TCU_BITS = 4;
 `endif
 
@@ -1160,10 +1163,22 @@ package VX_gpu_pkg;
     localparam LSU_WORD_SIZE        = XLENB;
     localparam LSU_ADDR_WIDTH	    = (`VX_CFG_MEM_ADDR_WIDTH - `CLOG2(LSU_WORD_SIZE));
     localparam LSU_MEM_BATCHES      = 1;
-    localparam LSU_TAG_ID_BITS      = (`CLOG2(`VX_CFG_LSUQ_IN_SIZE) + `CLOG2(LSU_MEM_BATCHES));
+    localparam LSU_TAG_ID_BITS_BASE = (`CLOG2(`VX_CFG_LSUQ_IN_SIZE) + `CLOG2(LSU_MEM_BATCHES));
+`ifdef TCU_OP
+    localparam LSU_TAG_ID_BITS      = `MAX(LSU_TAG_ID_BITS_BASE, 4);
+`else
+    localparam LSU_TAG_ID_BITS      = LSU_TAG_ID_BITS_BASE;
+`endif
     localparam LSU_TAG_WIDTH        = (UUID_WIDTH + LSU_TAG_ID_BITS);
     localparam LSU_NUM_REQS	        = `VX_CFG_NUM_LSU_BLOCKS * `VX_CFG_NUM_LSU_LANES;
-    localparam LMEM_TAG_WIDTH_BASE  = LSU_TAG_WIDTH + `CLOG2(`VX_CFG_NUM_LSU_BLOCKS);
+
+`ifdef TCU_OP
+    localparam TCU_LSU_BLOCKS       = 1;
+`else
+    localparam TCU_LSU_BLOCKS       = 0;
+`endif
+    localparam NUM_LSU_TOTAL        = `VX_CFG_NUM_LSU_BLOCKS + TCU_LSU_BLOCKS;
+    localparam LMEM_TAG_WIDTH_BASE  = LSU_TAG_WIDTH + `CLOG2(NUM_LSU_TOTAL);
     localparam LMEM_TAG_WIDTH       = LMEM_TAG_WIDTH_BASE;
 
     // Width of the tag carried over VX_lsu_sched_if: lsu_header + op_type
@@ -1270,7 +1285,12 @@ package VX_gpu_pkg;
 
     // Input request size (using coalesced memory blocks)
     localparam DCACHE_CHANNELS	    = `UP((`VX_CFG_NUM_LSU_LANES * LSU_WORD_SIZE) / DCACHE_WORD_SIZE);
+
+`ifdef TCU_OP
+    localparam DCACHE_NUM_REQS	    = NUM_LSU_TOTAL * DCACHE_CHANNELS;
+`else
     localparam DCACHE_NUM_REQS	    = `VX_CFG_NUM_LSU_BLOCKS * DCACHE_CHANNELS;
+`endif
 
     // Core request tag Id bits
     localparam DCACHE_MERGED_REQS   = (`VX_CFG_NUM_LSU_LANES * LSU_WORD_SIZE) / DCACHE_WORD_SIZE;

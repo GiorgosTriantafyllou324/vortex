@@ -645,6 +645,22 @@ module VX_decode import VX_gpu_pkg::*; #(
                             `USED_IREG (rs1);
                         end else
                     `endif
+                    `ifdef TCU_OP
+                        if (funct3 == 3'h6) begin // MMA_OP
+                            op_type = INST_OP_BITS'(INST_TCU_MMA_OP);
+                            op_args.tcu.cd_nregs     = '0;
+                            op_args.tcu.a_from_smem  = 1'b0;
+                            op_args.tcu.fmt_s        = '0;
+                            op_args.tcu.fmt_d        = '0;
+                            op_args.tcu.step_m       = '0;
+                            op_args.tcu.step_n       = '0;
+                            op_args.tcu.step_k       = '0;
+                            op_args.tcu.is_first_uop = 1'b0;
+                            op_args.tcu.is_last_uop  = 1'b0;
+                            `USED_IREG (rs1);
+                            `USED_IREG (rs2);
+                        end else
+                    `endif
                         begin
                             // WMMA / WGMMA (dense or sparse).
                     `ifdef VX_CFG_TCU_SPARSE_ENABLE

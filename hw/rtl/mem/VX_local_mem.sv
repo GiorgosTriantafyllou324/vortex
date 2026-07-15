@@ -32,6 +32,11 @@ module VX_local_mem import VX_gpu_pkg::*; #(
     // Request tag size
     parameter TAG_WIDTH         = 16,
 
+`ifdef TCU_OP
+    // Number of trailing request ports owned by TCU_OP
+    parameter TCU_NUM_REQS      = 0,
+`endif
+
     // Enable DMA port
     parameter DMA_ENABLE        = 0,
     parameter DMA_TAG_WIDTH     = 1,
@@ -155,6 +160,21 @@ module VX_local_mem import VX_gpu_pkg::*; #(
         } = per_bank_req_data_aos[i];
     end
 
+`ifdef TCU_OP
+    `STATIC_ASSERT(TCU_NUM_REQS <= NUM_REQS, ("invalid TCU request count"))
+    localparam TCU_REQ_BASE = NUM_REQS - TCU_NUM_REQS;
+    wire [NUM_BANKS-1:0] tcu_bank_req;
+    for (genvar i = 0; i < NUM_BANKS; ++i) begin : g_tcu_bank_req
+        assign tcu_bank_req[i] = per_bank_req_valid[i]
+                              && (per_bank_req_idx[i] >= REQ_SEL_WIDTH'(TCU_REQ_BASE));
+    end
+    wire tcu_req_active = (TCU_NUM_REQS != 0) && (|tcu_bank_req);
+`else
+    wire tcu_req_active = 1'b0;
+`endif
+
+    `UNUSED_VAR (tcu_req_active);
+
     // banks access (declared here so g_dma_enable can reference per_bank_rsp_data)
 
     wire [NUM_BANKS-1:0]                 per_bank_rsp_valid;
@@ -171,13 +191,17 @@ module VX_local_mem import VX_gpu_pkg::*; #(
     //   DMA has priority over LSU at every bank SRAM.
 
     wire dma_rsp_buf_ready; // driven by pipe-buffer or tied 0 when disabled
+    `UNUSED_VAR (dma_rsp_buf_ready);
 
     if (DMA_ENABLE) begin : g_dma_enable
         `UNUSED_VAR (dma_bus_if.req_data.attr)
 
-        assign dma_bus_if.req_ready = dma_bus_if.req_data.rw || dma_rsp_buf_ready;
+        assign dma_bus_if.req_ready = (dma_bus_if.req_data.rw || dma_rsp_buf_ready)
+                                   && ~tcu_req_active;
 
-        wire dma_rd_fire = dma_bus_if.req_valid && ~dma_bus_if.req_data.rw && dma_rsp_buf_ready;
+        wire dma_rd_fire = dma_bus_if.req_valid
+                         && dma_bus_if.req_ready
+                         && ~dma_bus_if.req_data.rw;
 
         // Delay tag by 1 cycle to align with SRAM OUT_REG latency
         VX_pipe_buffer #(
@@ -236,13 +260,14 @@ module VX_local_mem import VX_gpu_pkg::*; #(
         // DMA active signals (priority over LSU)
         wire dma_wr_b = DMA_ENABLE
                      && dma_bus_if.req_valid
+                     && dma_bus_if.req_ready
                      && dma_bus_if.req_data.rw
                      && (|dma_bus_if.req_data.byteen[i*WORD_SIZE +: WORD_SIZE]);
 
         wire dma_rd_b = DMA_ENABLE
                      && dma_bus_if.req_valid
-                     && ~dma_bus_if.req_data.rw
-                     && dma_rsp_buf_ready;
+                     && dma_bus_if.req_ready
+                     && ~dma_bus_if.req_data.rw;
 
         wire dma_active = dma_wr_b | dma_rd_b;
 

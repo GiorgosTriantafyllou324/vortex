@@ -375,4 +375,19 @@ module VX_scoreboard import VX_gpu_pkg::*; #(
         .ready_out (scoreboard_if.ready)
     );
 
+`ifdef TCU_OP
+    always @(posedge clk) begin
+        if (!reset
+         && scoreboard_if.valid
+         && scoreboard_if.ready
+         && scoreboard_if.data.ex_type == EX_TCU
+         && scoreboard_if.data.op_type == INST_TCU_MMA_OP) begin
+            `TRACE(1, ("%t: [VX_scoreboard] Issuing TCU MMA_OP. ISSUE_ID=%0d, sel_wis=%0d, ex_type=%0d, op_type=0x%0h, uuid=#%0d, PC=0x%0h\n",
+                $time, ISSUE_ID, scoreboard_if.data.wis, scoreboard_if.data.ex_type,
+                scoreboard_if.data.op_type, scoreboard_if.data.uuid,
+                to_fullPC(scoreboard_if.data.PC)))
+        end
+    end
+`endif
+
 endmodule

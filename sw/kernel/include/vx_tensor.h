@@ -657,6 +657,37 @@ public:
     frag_d.data[rc_idx(6)] = fd6;
     frag_d.data[rc_idx(7)] = fd7;
   }
+
+// #ifdef TCU_OP
+// TCU_OP BEGIN
+
+  typedef struct {
+    uintptr_t A, B, C, D;   // 4 pointers
+  } mma_ptrs_t;
+
+  typedef struct {
+    uint32_t M, N, K;
+    uint8_t fmt_s, fmt_d;
+    uint8_t sparse;
+  } mma_cfg_t;
+
+  static __attribute__((always_inline)) void mma_op(uintptr_t rs1_val,
+                                                    uintptr_t rs2_val)
+  {
+    // force the encoded rs1/rs2 to x10/x11
+    asm volatile(
+        "mv x10, %[v1]\n\t"
+        "mv x11, %[v2]\n\t"
+        ".insn r %[opc], 6, 2, x0, x10, x11\n"
+        :
+        : [opc]"i"(RISCV_CUSTOM0),
+          [v1]"r"(rs1_val),
+          [v2]"r"(rs2_val)
+        : "x10", "x11", "memory");
+  }
+
+// TCU_OP END
+// #endif
 };
 
 // =============================================================================
@@ -1106,6 +1137,7 @@ public:
       }
     }
   }
+
 };
 
 } // namespace tensor

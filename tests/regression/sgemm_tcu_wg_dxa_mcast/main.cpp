@@ -323,6 +323,22 @@ int main(int argc, char *argv[]) {
   // SMEM: A tile [cta_M x tileK] + B tile [tileK x tileN]
   uint32_t smem_size = (cta_M * cfg::tileK + cfg::tileK * cfg::xtileN) * sizeof(itype_t);
 
+#if defined(WGMMA_RS)
+#if defined(WGMMA_SS)
+  std::cout << "WGMMA mode macros: WGMMA_RS and WGMMA_SS defined" << std::endl;
+#else
+  std::cout << "WGMMA mode macro: WGMMA_RS defined" << std::endl;
+#endif
+  std::cout << "WGMMA effective mode: "
+            << ((WGMMA_NRC <= 16) ? "RS" : "SS (WGMMA_NRC > 16)")
+            << std::endl;
+#elif defined(WGMMA_SS)
+  std::cout << "WGMMA mode macro: WGMMA_SS defined" << std::endl;
+  std::cout << "WGMMA effective mode: SS" << std::endl;
+#else
+  std::cout << "WGMMA mode macro: none" << std::endl;
+  std::cout << "WGMMA effective mode: SS (WGMMA_RS not defined)" << std::endl;
+#endif
   std::cout << "input type: " << vt::ITYPE::name << ", output type: " << vt::OTYPE::name << std::endl;
   std::cout << "WGMMA tile: M=" << cfg::xtileM << ", N=" << cfg::xtileN << ", K=" << cfg::tileK << std::endl;
   std::cout << "CTA tile: M=" << cta_M << " (warps=" << warps << ")" << std::endl;

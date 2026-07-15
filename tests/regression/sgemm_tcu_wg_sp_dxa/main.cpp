@@ -278,6 +278,22 @@ int main(int argc, char *argv[]) {
   uint32_t smem_b_off        = ((warps * per_warp_section + smem_bank_bytes - 1) / smem_bank_bytes) * smem_bank_bytes;
   uint32_t smem_size         = smem_b_off + smem_b_bytes;
 
+#if defined(WGMMA_RS)
+#if defined(WGMMA_SS)
+  std::cout << "WGMMA mode macros: WGMMA_RS and WGMMA_SS defined" << std::endl;
+#else
+  std::cout << "WGMMA mode macro: WGMMA_RS defined" << std::endl;
+#endif
+  std::cout << "WGMMA effective mode: "
+            << ((WGMMA_NRC <= 16) ? "RS" : "SS (WGMMA_NRC > 16)")
+            << std::endl;
+#elif defined(WGMMA_SS)
+  std::cout << "WGMMA mode macro: WGMMA_SS defined" << std::endl;
+  std::cout << "WGMMA effective mode: SS" << std::endl;
+#else
+  std::cout << "WGMMA mode macro: none" << std::endl;
+  std::cout << "WGMMA effective mode: SS (WGMMA_RS not defined)" << std::endl;
+#endif
   std::cout << "ITYPE=fp16, OTYPE=fp32 (sparse 2:4 + DXA)" << std::endl;
   std::cout << "tile M=" << tileM << " N=" << tileN << " K=" << tileK_elem << std::endl;
   std::cout << "cta_M=" << cta_M << " (warps=" << warps << ")" << std::endl;

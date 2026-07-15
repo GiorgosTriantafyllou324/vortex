@@ -656,6 +656,22 @@ int main(int argc, char *argv[]) {
   uint32_t grid_dim[2]  = {N / per_warp_N, M / cta_M};
   uint32_t block_dim[2] = {warps * (uint32_t)NT, 1};
 
+#if defined(WGMMA_RS)
+#if defined(WGMMA_SS)
+  std::cout << "WGMMA mode macros: WGMMA_RS and WGMMA_SS defined" << std::endl;
+#else
+  std::cout << "WGMMA mode macro: WGMMA_RS defined" << std::endl;
+#endif
+  std::cout << "WGMMA effective mode: "
+            << ((WGMMA_NRC <= 16) ? "RS" : "SS (WGMMA_NRC > 16)")
+            << std::endl;
+#elif defined(WGMMA_SS)
+  std::cout << "WGMMA mode macro: WGMMA_SS defined" << std::endl;
+  std::cout << "WGMMA effective mode: SS" << std::endl;
+#else
+  std::cout << "WGMMA mode macro: none" << std::endl;
+  std::cout << "WGMMA effective mode: SS (WGMMA_RS not defined)" << std::endl;
+#endif
   std::cout << "input data type: " << vt::ITYPE::name << " (id=" << vt::ITYPE::id << ")" << std::endl;
   std::cout << "output data type: " << vt::OTYPE::name << " (id=" << vt::OTYPE::id << ")" << std::endl;
   std::cout << "WMMA Core Dimension: M=" << wg_cfg::tcM << ", N=" << wg_cfg::tcN << ", K=" << wg_cfg::tileK << std::endl;

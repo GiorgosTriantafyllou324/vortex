@@ -1,0 +1,6 @@
+file,testbench,run,m,n,k,sparsity,a_sparsity,b_sparsity,num_threads,itype,otype,warps,block_m,block_n,queue_depth,status
+"run_b_9.log","sgemm_tcu_op",1,128,128,512,0,0.0,0.0,32,"fp32","fp32",2,2,16,4,0
+"run_b_16.log","sgemm_tcu_op",2,128,128,512,2,0.2,0.2,32,"fp32","fp32",2,2,16,4,0
+"run_b_17.log","sgemm_tcu_op",3,128,128,512,2,0.5,0.5,32,"fp32","fp32",2,2,16,4,0
+"run_b_21.log","sgemm_tcu_op",3,128,128,512,2,0.5,0.5,32,"fp32","fp32",2,2,16,4,0
+"run_b_18.log","sgemm_tcu_op",4,128,128,512,2,0.9,0.9,32,"fp32","fp32",2,2,16,4,0

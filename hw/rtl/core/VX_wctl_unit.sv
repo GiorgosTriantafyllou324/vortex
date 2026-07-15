@@ -149,15 +149,19 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
     assign bar_valid    = wctl_bar_enable || txbar_bus_if.valid;
     assign bar.id       = rs1_data[BAR_ID_SHIFT +: NB_BITS];
     assign bar.is_event = (txbar_bus_if.valid && ~wctl_bar_enable) || is_tx_expect;
-    assign bar.is_sync  = execute_if.data.op_args.wctl.is_sync_bar;
+    assign bar.is_sync  = wctl_bar_enable && execute_if.data.op_args.wctl.is_sync_bar;
     assign bar.is_global= wctl_bar_enable && rs1_data[31];
     // expect_tx is not a normal arrival (it does not advance arrive_count)
-    assign bar.is_arrive= (execute_if.data.op_args.wctl.is_bar_arrive && ~rs2_data[31]) || execute_if.data.op_args.wctl.is_sync_bar;
+    assign bar.is_arrive= wctl_bar_enable
+                       && ((execute_if.data.op_args.wctl.is_bar_arrive && ~rs2_data[31])
+                        || execute_if.data.op_args.wctl.is_sync_bar);
     // expect_tx → phase=1 (attach/increment); legacy txbar release → phase=0
     assign bar.phase    = is_tx_expect ? 1'b1 : (wctl_bar_enable ? rs2_data[0] : ~txbar_bus_if.data.is_done);
     // For expect_tx: size_m1 carries (count - 1); for normal arrive: (num_warps - 1).
     // bar_unit will + 1 when consuming on the event path so the actual increment is `count`.
-    assign bar.size_m1  = rs2_data[BAR_SIZE_W-1:0] - BAR_SIZE_W'(1);
+    assign bar.size_m1  = wctl_bar_enable
+                        ? (rs2_data[BAR_SIZE_W-1:0] - BAR_SIZE_W'(1))
+                        : '0;
 
     assign txbar_bus_if.ready = ~wctl_bar_enable;
 
@@ -255,5 +259,27 @@ module VX_wctl_unit import VX_gpu_pkg::*; #(
     for (genvar i = 0; i < NUM_LANES; ++i) begin : g_result_if
         assign result_if.data.data[i] = bar_rsp_valid_r ? `VX_CFG_XLEN'(bar_phase_r) : `VX_CFG_XLEN'(dvstack_ptr_r);
     end
+
+`ifdef TCU_OP
+    always @(posedge clk) begin
+        if (~reset) begin
+            if (txbar_bus_if.valid && txbar_bus_if.ready) begin
+                `TRACE(1, ("%t: [wctl-txbar] consume txbar addr=%0d done=%0b\n",
+                    $time, txbar_bus_if.data.addr, txbar_bus_if.data.is_done))
+            end
+            if (wctl_bar_enable && execute_fire) begin
+                `TRACE(1, ("%t: [wctl-txbar] sw_bar execute wid=%0d addr=%0d id=%0d arrive=%0b sync=%0b phase=%0b\n",
+                    $time, execute_if.data.header.wid, wctl_bar_addr, bar.id,
+                    bar.is_arrive, bar.is_sync, bar.phase))
+            end
+            if (bar_valid && wctl_valid) begin
+                `TRACE(1, ("%t: [wctl-txbar] warp_ctl bar_valid wid=%0d addr=%0d is_event=%0b arrive=%0b sync=%0b global=%0b phase=%0b size_m1=%0d\n",
+                    $time, execute_if.data.header.wid, warp_ctl_if.bar_addr,
+                    bar.is_event, bar.is_arrive, bar.is_sync, bar.is_global,
+                    bar.phase, bar.size_m1))
+            end
+        end
+    end
+`endif
 
 endmodule

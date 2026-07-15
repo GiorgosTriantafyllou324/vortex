@@ -80,6 +80,53 @@ package VX_tcu_pkg;
     localparam TCU_N_STEPS = TCU_TILE_N / TCU_TC_N;
     localparam TCU_K_STEPS = TCU_TILE_K / TCU_TC_K;
 
+`ifdef TCU_OP
+    localparam TCU_TC_K_OP = `MAX(32'b1, `MAX((TCU_TC_M * TCU_TC_K) / 32,
+                                              (TCU_TC_K * TCU_TC_N) / 32));
+    localparam TCU_EXPANSION_RATIO = TCU_TC_K / TCU_TC_K_OP;
+
+    localparam TCU_TC_M_OP = 32;
+    localparam TCU_TC_N_OP = 32;
+    localparam LG_TCU_TC_M_OP = $clog2(TCU_TC_M_OP);
+    localparam LG_TCU_TC_N_OP = $clog2(TCU_TC_N_OP);
+
+    localparam TCU_M_STEPS_OP = 4;
+    localparam TCU_N_STEPS_OP = 2;
+    localparam TCU_K_STEPS_OP = TCU_K_STEPS * TCU_EXPANSION_RATIO;
+
+    localparam TCU_C_BLOCKS_IN_ACCU = TCU_TC_M_OP * TCU_TC_N_OP / `VX_CFG_NUM_LSU_LANES;
+    localparam TCU_OPS_PER_C_BLOCK = TCU_K_STEPS_OP / TCU_C_BLOCKS_IN_ACCU;
+    localparam TCU_UOPS_OP = TCU_M_STEPS_OP * TCU_N_STEPS_OP * TCU_K_STEPS_OP;
+
+`ifdef TCU_FEOP_BLOCK_M_OVERRIDE
+    localparam TCU_FEOP_BLOCK_M_SIZE = `TCU_FEOP_BLOCK_M_OVERRIDE;
+`else
+    localparam TCU_FEOP_BLOCK_M_SIZE = 2;
+`endif
+
+`ifdef TCU_FEOP_BLOCK_N_OVERRIDE
+    localparam TCU_FEOP_BLOCK_N_SIZE = `TCU_FEOP_BLOCK_N_OVERRIDE;
+`else
+    localparam TCU_FEOP_BLOCK_N_SIZE = 16;
+`endif
+
+`ifdef TCU_FEOP_XBAR_QUEUE_DEPTH_OVERRIDE
+    localparam TCU_FEOP_XBAR_QUEUE_DEPTH = `TCU_FEOP_XBAR_QUEUE_DEPTH_OVERRIDE;
+`else
+    localparam TCU_FEOP_XBAR_QUEUE_DEPTH = 4;
+`endif
+
+    localparam TCU_FEOP_M_STEPS = TCU_TC_M_OP / TCU_FEOP_BLOCK_M_SIZE;
+    localparam TCU_FEOP_N_STEPS = TCU_TC_N_OP / TCU_FEOP_BLOCK_N_SIZE;
+    localparam TCU_FEOP_STEPS = TCU_FEOP_M_STEPS * TCU_FEOP_N_STEPS;
+
+    localparam LG_TCU_FEOP_BLOCK_M_SIZE = $clog2(TCU_FEOP_BLOCK_M_SIZE);
+    localparam LG_TCU_FEOP_BLOCK_N_SIZE = $clog2(TCU_FEOP_BLOCK_N_SIZE);
+    localparam LG_TCU_FEOP_M_STEPS = $clog2(TCU_FEOP_M_STEPS);
+    localparam LG_TCU_FEOP_N_STEPS = $clog2(TCU_FEOP_N_STEPS);
+    localparam LG_TCU_FEOP_STEPS = $clog2(TCU_FEOP_STEPS);
+`endif
+
     // A micro-tiling
     localparam TCU_A_BLOCK_SIZE = TCU_TC_M * TCU_TC_K;
     localparam TCU_A_SUB_BLOCKS = TCU_BLOCK_CAP / TCU_A_BLOCK_SIZE;
@@ -399,6 +446,15 @@ package VX_tcu_pkg;
                     op_args.tcu.step_m, op_args.tcu.step_n));
             end
           `endif
+        `endif
+        `ifdef TCU_OP
+            INST_TCU_MMA_OP: begin
+                `TRACE(level, ("MMA_OP."));
+                trace_fmt(level, op_args.tcu.fmt_s);
+                `TRACE(level, ("."));
+                trace_fmt(level, op_args.tcu.fmt_d);
+                `TRACE(level, (".%0d.%0d", op_args.tcu.step_m, op_args.tcu.step_n));
+            end
         `endif
             default: `TRACE(level, ("?"))
         endcase

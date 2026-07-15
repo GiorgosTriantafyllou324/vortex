@@ -74,12 +74,21 @@ module VX_execute import VX_gpu_pkg::*; #(
     VX_mem_bus_if.master    tcu_lmem_if,
 `endif
 
+`ifdef TCU_OP
+    // TCU LSU-style memory interface
+    VX_lsu_mem_if.master    tcu_lsu_mem_if,
+`endif
+
     // DCR-CSR interface
     VX_dcr_csr_if           dcr_csr_if
 );
 
 `ifdef VX_CFG_EXT_F_ENABLE
     VX_fpu_csr_if fpu_csr_if[`VX_CFG_NUM_FPU_BLOCKS]();
+`endif
+
+`ifdef TCU_OP
+    VX_txbar_bus_if tcu_txbar_bus_if();
 `endif
 
     VX_alu_unit #(
@@ -133,6 +142,10 @@ module VX_execute import VX_gpu_pkg::*; #(
     `ifdef VX_CFG_TCU_META_ENABLE
         .tcu_mem_if        (tcu_mem_if),
     `endif
+    `ifdef TCU_OP
+        .tcu_lsu_mem_if (tcu_lsu_mem_if),
+        .txbar_bus_if   (tcu_txbar_bus_if),
+    `endif
         .dispatch_if    (dispatch_if[EX_TCU * `VX_CFG_ISSUE_WIDTH +: `VX_CFG_ISSUE_WIDTH]),
         .commit_if      (commit_if[EX_TCU * `VX_CFG_ISSUE_WIDTH +: `VX_CFG_ISSUE_WIDTH])
     );
@@ -165,6 +178,9 @@ module VX_execute import VX_gpu_pkg::*; #(
     `endif
     `ifdef VX_CFG_EXT_RASTER_ENABLE
         .raster_bus_if  (raster_bus_if),
+    `endif
+    `ifdef TCU_OP
+        .tcu_txbar_bus_if(tcu_txbar_bus_if),
     `endif
         .sched_csr_if   (sched_csr_if),
         .warp_ctl_if    (warp_ctl_if),

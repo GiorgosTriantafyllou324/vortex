@@ -35,6 +35,11 @@ module VX_tcu_unit import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
     VX_lsu_sched_if.master  tcu_mem_if,
 `endif
 
+`ifdef TCU_OP
+    VX_lsu_mem_if.master    tcu_lsu_mem_if,
+    VX_txbar_bus_if.master  txbar_bus_if,
+`endif
+
     // Inputs
     VX_dispatch_if.slave    dispatch_if [`VX_CFG_ISSUE_WIDTH],
 
@@ -80,6 +85,10 @@ module VX_tcu_unit import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
     VX_result_if #(
         .data_t (tcu_result_t)
     ) core_result_if[BLOCK_SIZE]();
+
+`ifdef TCU_OP
+    VX_txbar_bus_if per_block_txbar_if[BLOCK_SIZE]();
+`endif
 
 `ifdef VX_CFG_TCU_META_ENABLE
     wire [BLOCK_SIZE-1:0]    agu_ld_valid;
@@ -222,6 +231,19 @@ module VX_tcu_unit import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
     // -----------------------------------------------------------------------
 
     for (genvar block_idx = 0; block_idx < BLOCK_SIZE; ++block_idx) begin : g_blocks
+    `ifdef TCU_OP
+        VX_tcu_op_core #(
+            .INSTANCE_ID (`SFORMATF(("%s-op_core%0d", INSTANCE_ID, block_idx)))
+        ) tcu_op_core (
+            `SCOPE_IO_BIND (block_idx)
+            .clk            (clk),
+            .reset          (reset),
+            .execute_if     (core_execute_if[block_idx]),
+            .tcu_lsu_mem_if (tcu_lsu_mem_if),
+            .txbar_bus_if   (per_block_txbar_if[block_idx]),
+            .result_if      (core_result_if[block_idx])
+        );
+    `else
         VX_tcu_core #(
             .INSTANCE_ID (`SFORMATF(("%s-fused%0d", INSTANCE_ID, block_idx)))
         ) tcu_core (
@@ -242,7 +264,30 @@ module VX_tcu_unit import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
             .execute_if (core_execute_if[block_idx]),
             .result_if  (core_result_if[block_idx])
         );
+    `endif
     end
+
+`ifdef TCU_OP
+    VX_txbar_arb #(
+        .NUM_REQS (BLOCK_SIZE),
+        .ARBITER  ("R"),
+        .OUT_BUF  (0)
+    ) txbar_arb (
+        .clk       (clk),
+        .reset     (reset),
+        .bus_in_if (per_block_txbar_if),
+        .bus_out_if(txbar_bus_if)
+    );
+
+    `UNUSED_VAR (tbuf_rs1_data);
+    `UNUSED_VAR (tbuf_rs2_data);
+    `UNUSED_VAR (tbuf_ready_eff);
+    `UNUSED_VAR (agu_meta_wr_en);
+    `UNUSED_VAR (agu_meta_wr_wid);
+    `UNUSED_VAR (agu_meta_wr_idx);
+    `UNUSED_VAR (agu_meta_wr_data);
+
+`endif
 
     // -----------------------------------------------------------------------
     // Lane gather
@@ -258,5 +303,16 @@ module VX_tcu_unit import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
         .result_if (per_block_result_if),
         .commit_if (commit_if)
     );
+
+`ifdef TCU_OP
+    always_ff @(posedge clk) begin
+        if (~reset
+         && per_block_execute_if[0].valid
+         && per_block_execute_if[0].ready
+         && per_block_execute_if[0].data.op_type == INST_TCU_MMA_OP) begin
+            `TRACE(1, ("%t: [tcu_unit]: Activated (outer-product)\n", $time));
+        end
+    end
+`endif
 
 endmodule

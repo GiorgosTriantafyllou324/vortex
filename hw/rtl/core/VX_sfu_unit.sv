@@ -41,6 +41,10 @@ import VX_raster_pkg::*;
     VX_txbar_bus_if.slave   dxa_txbar_bus_if,
 `endif
 
+`ifdef TCU_OP
+    VX_txbar_bus_if.slave   tcu_txbar_bus_if,
+`endif
+
 `ifdef VX_CFG_EXT_TEX_ENABLE
     VX_tex_bus_if.master    tex_bus_if,
 `endif
@@ -213,15 +217,57 @@ import VX_raster_pkg::*;
         .dxa_req_bus_if (dxa_req_bus_if)
     );
 
-    // The only txbar producer is the SMEM-completion path through
-    // dxa_txbar_bus_if (DXA release); no arbitration is needed.
+`ifdef TCU_OP
+    // DXA completion has priority when both producers present an event.
+    assign txbar_bus_if.valid     = dxa_txbar_bus_if.valid || tcu_txbar_bus_if.valid;
+    assign txbar_bus_if.data      = dxa_txbar_bus_if.valid ? dxa_txbar_bus_if.data
+                                                          : tcu_txbar_bus_if.data;
+    assign dxa_txbar_bus_if.ready = txbar_bus_if.ready;
+    assign tcu_txbar_bus_if.ready = txbar_bus_if.ready && ~dxa_txbar_bus_if.valid;
+`else
     assign txbar_bus_if.valid     = dxa_txbar_bus_if.valid;
     assign txbar_bus_if.data      = dxa_txbar_bus_if.data;
     assign dxa_txbar_bus_if.ready = txbar_bus_if.ready;
+`endif
+`else
+`ifdef TCU_OP
+    assign txbar_bus_if.valid     = tcu_txbar_bus_if.valid;
+    assign txbar_bus_if.data      = tcu_txbar_bus_if.data;
+    assign tcu_txbar_bus_if.ready = txbar_bus_if.ready;
 `else
     assign txbar_bus_if.valid = 1'b0;
     assign txbar_bus_if.data = 'x;
     `UNUSED_VAR (txbar_bus_if.ready)
+`endif
+`endif
+
+`ifdef TCU_OP
+    always @(posedge clk) begin
+        if (~reset) begin
+        `ifdef VX_CFG_EXT_DXA_ENABLE
+            if ((dxa_txbar_bus_if.valid && dxa_txbar_bus_if.ready)
+             || (tcu_txbar_bus_if.valid && tcu_txbar_bus_if.ready)) begin
+                `TRACE(1, ("%t: [sfu-txbar] in: dxa(v=%0b r=%0b a=%0d d=%0b) tcu(v=%0b r=%0b a=%0d d=%0b)\n",
+                    $time,
+                    dxa_txbar_bus_if.valid, dxa_txbar_bus_if.ready,
+                    dxa_txbar_bus_if.data.addr, dxa_txbar_bus_if.data.is_done,
+                    tcu_txbar_bus_if.valid, tcu_txbar_bus_if.ready,
+                    tcu_txbar_bus_if.data.addr, tcu_txbar_bus_if.data.is_done))
+            end
+        `else
+            if (tcu_txbar_bus_if.valid && tcu_txbar_bus_if.ready) begin
+                `TRACE(1, ("%t: [sfu-txbar] in: tcu(v=%0b r=%0b a=%0d d=%0b)\n",
+                    $time, tcu_txbar_bus_if.valid, tcu_txbar_bus_if.ready,
+                    tcu_txbar_bus_if.data.addr, tcu_txbar_bus_if.data.is_done))
+            end
+        `endif
+            if (txbar_bus_if.valid && txbar_bus_if.ready) begin
+                `TRACE(1, ("%t: [sfu-txbar] out: v=%0b r=%0b a=%0d d=%0b\n",
+                    $time, txbar_bus_if.valid, txbar_bus_if.ready,
+                    txbar_bus_if.data.addr, txbar_bus_if.data.is_done))
+            end
+        end
+    end
 `endif
 
 `ifdef VX_CFG_EXT_TEX_ENABLE

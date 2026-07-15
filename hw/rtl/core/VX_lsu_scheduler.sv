@@ -45,6 +45,7 @@ module VX_lsu_scheduler import VX_gpu_pkg::*; #(
 
     localparam CLIENT_ID_BITS  = (NUM_CLIENTS > 1) ? $clog2(NUM_CLIENTS) : 0;
     localparam SCHED_TAG_WIDTH = LSU_CLIENT_TAG_WIDTH + CLIENT_ID_BITS;
+    localparam MEM_TAG_WIDTH   = UUID_WIDTH + `CLOG2(CORE_QUEUE_SIZE);
 
     // -----------------------------------------------------------------------
     // Arbiter (round-robin) — feeds the single scheduler input from the
@@ -189,13 +190,13 @@ module VX_lsu_scheduler import VX_gpu_pkg::*; #(
     wire [NUM_LANES-1:0][LSU_ADDR_WIDTH-1:0]   lsu_mem_req_addr;
     wire [NUM_LANES-1:0][MEM_ATTR_WIDTH-1:0]   lsu_mem_req_attr;
     wire [NUM_LANES-1:0][(LSU_WORD_SIZE*8)-1:0] lsu_mem_req_data;
-    wire [LSU_TAG_WIDTH-1:0]                   lsu_mem_req_tag;
+    wire [MEM_TAG_WIDTH-1:0]                   lsu_mem_req_tag;
     wire                                       lsu_mem_req_ready;
 
     wire                                       lsu_mem_rsp_valid;
     wire [NUM_LANES-1:0]                       lsu_mem_rsp_mask;
     wire [NUM_LANES-1:0][(LSU_WORD_SIZE*8)-1:0] lsu_mem_rsp_data;
-    wire [LSU_TAG_WIDTH-1:0]                   lsu_mem_rsp_tag;
+    wire [MEM_TAG_WIDTH-1:0]                   lsu_mem_rsp_tag;
     wire                                       lsu_mem_rsp_ready;
 
     wire                                       sched_req_queue_empty;
@@ -266,13 +267,13 @@ module VX_lsu_scheduler import VX_gpu_pkg::*; #(
     assign lsu_mem_if.req_data.addr   = lsu_mem_req_addr;
     assign lsu_mem_if.req_data.user   = lsu_mem_req_attr;
     assign lsu_mem_if.req_data.data   = lsu_mem_req_data;
-    assign lsu_mem_if.req_data.tag    = lsu_mem_req_tag;
+    assign lsu_mem_if.req_data.tag    = LSU_TAG_WIDTH'(lsu_mem_req_tag);
     assign lsu_mem_req_ready          = lsu_mem_if.req_ready;
 
     assign lsu_mem_rsp_valid          = lsu_mem_if.rsp_valid;
     assign lsu_mem_rsp_mask           = lsu_mem_if.rsp_data.mask;
     assign lsu_mem_rsp_data           = lsu_mem_if.rsp_data.data;
-    assign lsu_mem_rsp_tag            = lsu_mem_if.rsp_data.tag;
+    assign lsu_mem_rsp_tag            = lsu_mem_if.rsp_data.tag[MEM_TAG_WIDTH-1:0];
     assign lsu_mem_if.rsp_ready       = lsu_mem_rsp_ready;
 
     assign empty = sched_req_queue_empty;
