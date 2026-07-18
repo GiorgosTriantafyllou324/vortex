@@ -1369,8 +1369,6 @@ int main(int argc, char *argv[]) {
   std::vector<itype_t> h_A_packed;
   std::vector<itype_t> h_B_packed;
   std::vector<otype_t> h_C_packed;
-  uint32_t h_A_bitmap_words = 0;
-  uint32_t h_B_bitmap_words = 0;
   // std::vector<otype_t> h_D(sizeD);
 
   for (uint32_t i = 0; i < sizeA; ++i) {
@@ -1417,7 +1415,6 @@ int main(int argc, char *argv[]) {
 
   if (sparsity == 2) {
     std::vector<uint8_t> h_A_bitmap = build_bitmap_A_colmajor_tiled32(h_A, M, K);
-    h_A_bitmap_words = h_A_bitmap.size() / sizeof(uint32_t);
     std::cout << "A bitmap bytes: " << h_A_bitmap.size() << " (bits=" << (M * K) << ")" << std::endl;
     trace_bitmap("A", h_A_bitmap);
 
@@ -1428,7 +1425,6 @@ int main(int argc, char *argv[]) {
   }
   if (sparsity >= 1) {
     std::vector<uint8_t> h_B_bitmap = build_bitmap_B_rowmajor_tiled32N(h_B, K, N);
-    h_B_bitmap_words = h_B_bitmap.size() / sizeof(uint32_t);
     std::cout << "B bitmap bytes: " << h_B_bitmap.size() << " (bits=" << (K * N) << ")" << std::endl;
     trace_bitmap("B", h_B_bitmap);
 
@@ -1563,9 +1559,12 @@ int main(int argc, char *argv[]) {
     constexpr uint32_t tile_M = 32;
     constexpr uint32_t tile_N = 32;
     const uint32_t tile_a_elems = tile_M * dxa_tile_k;
-    const uint32_t total_a_tiles = (M / tile_M) * (K / dxa_tile_k);
+    const uint32_t tiles_m = M / tile_M;
+    const uint32_t tiles_k = K / dxa_tile_k;
+    const uint32_t tiles_n = N / tile_N;
     const uint32_t tile_b_elems = dxa_tile_k * tile_N;
-    const uint32_t total_b_tiles = (N / tile_N) * (K / dxa_tile_k);
+    const uint32_t total_a_tiles = tiles_m * tiles_k;
+    const uint32_t total_b_tiles = tiles_n * tiles_k;
 
     if (sparsity == 2) {
       const uint32_t a_transfer_elems =
@@ -1576,12 +1575,20 @@ int main(int argc, char *argv[]) {
           tile_a_elems * sizeof(itype_t),
           a_transfer_elems, 1,
           sizeof(itype_t)));
-    } else {
+    } else if (sparsity == 1) {
       RT_CHECK(vortex::dxa::program_2d(
           device, kDescA, kernel_arg.A_addr,
           tile_a_elems, total_a_tiles,
           tile_a_elems * sizeof(itype_t),
           tile_a_elems, 1,
+          sizeof(itype_t)));
+    } else {
+      RT_CHECK(vortex::dxa::program_3d(
+          device, kDescA, kernel_arg.A_addr,
+          tile_a_elems, tiles_k, tiles_m,
+          tile_a_elems * sizeof(itype_t),
+          tiles_k * tile_a_elems * sizeof(itype_t),
+          tile_a_elems, 1, 1,
           sizeof(itype_t)));
     }
 
@@ -1595,18 +1602,19 @@ int main(int argc, char *argv[]) {
           b_transfer_elems, 1,
           sizeof(itype_t)));
     } else {
-      RT_CHECK(vortex::dxa::program_2d(
+      RT_CHECK(vortex::dxa::program_3d(
           device, kDescB, kernel_arg.B_addr,
-          tile_b_elems, total_b_tiles,
+          tile_b_elems, tiles_k, tiles_n,
           tile_b_elems * sizeof(itype_t),
-          tile_b_elems, 1,
+          tiles_k * tile_b_elems * sizeof(itype_t),
+          tile_b_elems, 1, 1,
           sizeof(itype_t)));
     }
 
     if (sparsity == 2) {
       RT_CHECK(vortex::dxa::program_1d(
           device, kDescABitmap, kernel_arg.A_bitmap_addr,
-          h_A_bitmap_words,
+          (M * K) / 32,
           dxa_tile_k,
           sizeof(uint32_t)));
     }
@@ -1614,7 +1622,7 @@ int main(int argc, char *argv[]) {
     if (sparsity >= 1) {
       RT_CHECK(vortex::dxa::program_1d(
           device, kDescBBitmap, kernel_arg.B_bitmap_addr,
-          h_B_bitmap_words,
+          (K * N) / 32,
           dxa_tile_k,
           sizeof(uint32_t)));
     }

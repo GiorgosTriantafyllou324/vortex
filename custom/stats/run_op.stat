@@ -1,0 +1,32 @@
+Testbench: sgemm_tcu_op
+Sparsity Mode:2 | MxNxK=128x128x512 | A sparsity=89.9246% | B sparsity=89.8209% | It=fp16
+Flags: TCU_OP
+BLOCK_M=2, BLOCK_N=16, XBAR_QUEUE_DEPTH=4
+Threads: 32, Warps: 4
+perf=1
+
+PASS
+Total kernel cycles: 81527
+Total kernel instructions: 6599
+Kernel body cycles: 0
+Kernel body instructions: 0
+MUL active cycles: 15311
+XBAR stalls: 3.30% (523 cycles)
+
+PERF1: scheduler: idle=92%, occupancy=1.0 (25%), simt_util=32.0 (100%)
+PERF1: stalls: fetch=0%, ibuf=0%, scrb=14%, opds=1%, alu=0%, lsu=0%, sfu=0%, fpu=0%, tcu=0%
+PERF1: inst_mix: alu=81%, lsu=1%, sfu=16%, fpu=0%, tcu=2%
+PERF1: branches: total=373, divergent=0 (rate=0%)
+PERF1: memory: ifetch_lat=5.90, load_lat=142.08, loads=1696, stores=288
+PERF1: instrs=6599, cycles=81527, IPC=0.081
+
+PERF (perf=1):
+scheduler: idle=92%, occupancy=1.0 (25%), simt_util=32.0 (100%)
+stalls: fetch=0%, ibuf=0%, scoreboard=14%, operands=1%, alu=0%, lsu=0%, sfu=0%, fpu=0%, tcu=0%
+inst_mix: alu=81%, lsu=1%, sfu=16%, fpu=0%, tcu=2%
+branches: total=373, divergent=0 (rate=0%)
+memory: ifetch_lat=5.90, load_lat=142.08, loads=1696, stores=288
+
+TCU cycles (from first TCU issue to last TCU commit): N/A
+MULs active: 0
+TCU utilization: N/A
