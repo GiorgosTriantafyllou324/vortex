@@ -136,7 +136,6 @@ __kernel void kernel_main(kernel_arg_t *__UNIFORM__ arg)
 
   const bool __UNIFORM__ is_dxa_warp = (csr_read(VX_CSR_CTA_RANK) == 0);
 
-
   uint32_t current_stage = 0;
   uint32_t next_stage = 0;
   uintptr_t pending_rs1_val = 0;
@@ -221,87 +220,74 @@ __kernel void kernel_main(kernel_arg_t *__UNIFORM__ arg)
     constexpr uint32_t b_bitmap_skew_regs = 16;
     constexpr uint32_t b_tile_align_regs = 16;
 
-#pragma unroll
-    for (uint32_t tile_row_idx = 0; tile_row_idx < tiles_m; ++tile_row_idx) {
-#pragma unroll
-      for (uint32_t tile_col_idx = 0; tile_col_idx < tiles_n; ++tile_col_idx) {
+// #pragma unroll
+    for (uint32_t tile_id = 0; tile_id < total_tiles; ++tile_id) {
+      const uint32_t tile_row_idx = tile_id / tiles_n;
+      const uint32_t tile_col_idx = tile_id % tiles_n;
+      const uintptr_t mma_D_addr = static_cast<uintptr_t>(arg->D_addr) + static_cast<uintptr_t>(tile_id) * tileD_regs * sizeof(uint32_t);
 
-        const uint32_t tile_id = tile_row_idx * tiles_n + tile_col_idx;
-        const uintptr_t mma_D_addr = static_cast<uintptr_t>(arg->D_addr) + static_cast<uintptr_t>(tile_id) * tileD_regs * sizeof(uint32_t);
-        uint32_t* mma_D = reinterpret_cast<uint32_t*>(mma_D_addr);
+      static constexpr uint32_t kDenseLaunches = div_up_constexpr(K, tile_K);
+// #pragma unroll
+      for (uint32_t dense_iter = 0; dense_iter < kDenseLaunches; ++dense_iter)
+      {
+        const uint32_t flags_chunk =
+            (uint32_t(dense_iter == 0) << 1) |
+            uint32_t(dense_iter == (kDenseLaunches - 1));
 
-        static constexpr uint32_t kDenseLaunches = div_up_constexpr(K, tile_K);
-        for (uint32_t dense_iter = 0; dense_iter < kDenseLaunches; ++dense_iter) 
-        {
-          const uint32_t k_tile_idx = dense_iter;
+        if ((tile_id | dense_iter) != 0) {
+          launch_pending_mma();
+        }
 
-          const uint32_t flags_chunk = (uint32_t(dense_iter == 0) << 1) | uint32_t(dense_iter == (kDenseLaunches - 1));
+        const uint32_t k_offset = dense_iter * tile_K;
+        uint32_t* stage_base = half0_base + next_stage * half_lmem_regs;
+        uint32_t* A_bitmap_lmem_next = nullptr;
+        uint32_t* A_lmem_next = stage_base;
+        uint32_t* B_bitmap_lmem_next = stage_base + dense_a_tile_regs;
+        uint32_t* B_lmem_next = B_bitmap_lmem_next + bitmap_tile_regs;
 
-          vx_barrier(barrier_base + ((current_stage + 2) << 8), num_warps_per_cta);
+        if constexpr (kSparseA) {
+          A_bitmap_lmem_next = stage_base;
+          A_lmem_next = stage_base + bitmap_tile_regs;
+          B_bitmap_lmem_next += b_bitmap_skew_regs;
+          B_lmem_next = B_bitmap_lmem_next + bitmap_tile_regs + b_tile_align_regs;
+        }
 
-          /* In the very first execution, no data are ready so skip the mma_op */
-          if ((tile_row_idx | tile_col_idx | dense_iter) != 0) 
-          {
-            launch_pending_mma();
-          }
-
-          const uint32_t k_offset = k_tile_idx * tile_K;
-          // Arithmetic stage selection keeps the rolled K loop from spilling pointer tables.
-          uint32_t* stage_base = half0_base + next_stage * half_lmem_regs;
-          uint32_t* A_bitmap_lmem_next = nullptr;
-          uint32_t* A_lmem_next = stage_base;
-          uint32_t* B_bitmap_lmem_next = stage_base + dense_a_tile_regs;
-          uint32_t* B_lmem_next = B_bitmap_lmem_next + bitmap_tile_regs;
-
+        if (is_dxa_warp) {
           if constexpr (kSparseA) {
-            A_bitmap_lmem_next = stage_base;
-            A_lmem_next = stage_base + bitmap_tile_regs;
-            B_bitmap_lmem_next += b_bitmap_skew_regs;
-            B_lmem_next = B_bitmap_lmem_next + bitmap_tile_regs + b_tile_align_regs;
-          }
-
-          if (is_dxa_warp) {
-            if constexpr (kSparseA) {
-              const uint32_t load_bar_id = barrier_base + (next_stage << 8);
-              vx_barrier_expect_tx(load_bar_id, 4);
-              vx_dxa_issue_1d_wg(kDescABitmap, load_bar_id, A_bitmap_lmem_next, tile_row_idx * K + k_offset);
-              vx_dxa_issue_2d_wg(kDescA, load_bar_id, A_lmem_next, 0, tile_row_idx * kDenseLaunches + k_tile_idx);
-            } else {
-              const uint32_t load_bar_id = barrier_base + (next_stage << 8);
-              vx_barrier_expect_tx(load_bar_id, 3);
-              vx_dxa_issue_2d_wg(kDescA, load_bar_id, A_lmem_next, 0, tile_row_idx * kDenseLaunches + k_tile_idx);
-            }
-
             const uint32_t load_bar_id = barrier_base + (next_stage << 8);
-            vx_dxa_issue_1d_wg(kDescBBitmap, load_bar_id, B_bitmap_lmem_next, tile_col_idx * K + k_offset);
-            vx_dxa_issue_2d_wg(kDescB, load_bar_id, B_lmem_next, 0, tile_col_idx * kDenseLaunches + k_tile_idx);
+            vx_barrier_expect_tx(load_bar_id, 4);
+            vx_dxa_issue_1d_wg(kDescABitmap, load_bar_id, A_bitmap_lmem_next, tile_row_idx * K + k_offset);
+            vx_dxa_issue_2d_wg(kDescA, load_bar_id, A_lmem_next, 0, tile_row_idx * kDenseLaunches + dense_iter);
+          } else {
+            const uint32_t load_bar_id = barrier_base + (next_stage << 8);
+            vx_barrier_expect_tx(load_bar_id, 3);
+            vx_dxa_issue_2d_wg(kDescA, load_bar_id, A_lmem_next, 0, tile_row_idx * kDenseLaunches + dense_iter);
           }
 
+          const uint32_t load_bar_id = barrier_base + (next_stage << 8);
+          vx_dxa_issue_1d_wg(kDescBBitmap, load_bar_id, B_bitmap_lmem_next, tile_col_idx * K + k_offset);
+          vx_dxa_issue_2d_wg(kDescB, load_bar_id, B_lmem_next, 0, tile_col_idx * kDenseLaunches + dense_iter);
+        }
 
-          if (is_dxa_warp) {
-            pending_rs1_val = (uintptr_t)vx_wgather(
-                      (size_t)(uintptr_t)A_lmem_next,
-                      (size_t)(uintptr_t)B_lmem_next,
-                      (size_t)(uintptr_t)nullptr /* mma_C */,
-                      (size_t)(uintptr_t)mma_D_addr);
-            pending_rs2_val = (uintptr_t)vx_wgather(
-                      (size_t)(uintptr_t)A_bitmap_lmem_next,
-                      (size_t)(uintptr_t)B_bitmap_lmem_next,
-                      (size_t)(barrier_base + ((next_stage + 2) << 8)),
-                      (size_t)((tile_K << 24)       |
-                              (max_a_blocks << 18)      |
-                              (max_b_blocks << 12)      |
-                              (vt::OTYPE::id << 8)  | 
-                              (vt::ITYPE::id << 4)  | 
-                              (kConstSparsity << 2) | 
-                              flags_chunk));
-          }
+        if (is_dxa_warp) {
+          pending_rs1_val = (uintptr_t)vx_wgather(
+                    (size_t)(uintptr_t)A_lmem_next,
+                    (size_t)(uintptr_t)B_lmem_next,
+                    (size_t)(uintptr_t)nullptr,
+                    (size_t)(uintptr_t)mma_D_addr);
+          pending_rs2_val = (uintptr_t)vx_wgather(
+                    (size_t)(uintptr_t)A_bitmap_lmem_next,
+                    (size_t)(uintptr_t)B_bitmap_lmem_next,
+                    (size_t)(barrier_base + ((next_stage + 2) << 8)),
+                    (size_t)((tile_K << 24) | (max_a_blocks << 18) |
+                            (max_b_blocks << 12) | (vt::OTYPE::id << 8) |
+                            (vt::ITYPE::id << 4) | (kConstSparsity << 2) |
+                            flags_chunk));
         }
       }
     }
 
     launch_pending_mma();
-
     vx_barrier(barrier_base + ((current_stage + 2) << 8), num_warps_per_cta);
   }
 
