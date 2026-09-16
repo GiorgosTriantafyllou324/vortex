@@ -94,6 +94,65 @@ sudo ./ci/install_dependencies.sh
 ```sh
    ./ci/toolchain_install.sh --all
 ```
+
+If this did not work because the legacy installer could not download or
+extract the expected archives, pin it to the compatible prebuilt toolchain
+revision and try again:
+
+```sh
+sed -i.bak \
+  's|https://github.com/vortexgpgpu/vortex-toolchain-prebuilt/raw/master|https://raw.githubusercontent.com/vortexgpgpu/vortex-toolchain-prebuilt/73438da2110fd5947079ccbc8b377686498b1884|' \
+  ci/toolchain_install.sh
+
+grep '^REPOSITORY=' ci/toolchain_install.sh
+./ci/toolchain_install.sh --all
+```
+
+The original generated installer is saved as
+`ci/toolchain_install.sh.bak`. Running `../configure` again regenerates the
+installer, so the substitution must then be reapplied.
+
+On Ubuntu 24.04, the prebuilt Yosys binary also requires `libffi.so.7`, while
+the distribution provides `libffi.so.8`. Do not symlink these libraries
+because they have different ABIs. Install the old library locally for Yosys:
+
+```sh
+wget -O /tmp/libffi7_3.3-4_amd64.deb \
+  https://security.ubuntu.com/ubuntu/pool/main/libf/libffi/libffi7_3.3-4_amd64.deb
+
+mkdir -p /tmp/vortex-yosys-fix/libffi7
+dpkg-deb -x \
+  /tmp/libffi7_3.3-4_amd64.deb \
+  /tmp/vortex-yosys-fix/libffi7
+
+cd /tmp/vortex-yosys-fix
+apt-get download patchelf
+mkdir -p patchelf
+dpkg-deb -x patchelf_*.deb patchelf
+
+mkdir -p "$HOME/tools/yosys/lib"
+cp -a \
+  libffi7/usr/lib/x86_64-linux-gnu/libffi.so.7 \
+  libffi7/usr/lib/x86_64-linux-gnu/libffi.so.7.1.0 \
+  "$HOME/tools/yosys/lib/"
+
+test -e "$HOME/tools/yosys/bin/yosys.unpatched" || \
+  cp -a "$HOME/tools/yosys/bin/yosys" "$HOME/tools/yosys/bin/yosys.unpatched"
+
+./patchelf/usr/bin/patchelf \
+  --set-rpath '$ORIGIN/../lib' \
+  "$HOME/tools/yosys/bin/yosys"
+
+cd - >/dev/null
+```
+
+Verify the repaired installation:
+
+```sh
+"$HOME/tools/yosys/bin/yosys" -V
+ldd "$HOME/tools/yosys/bin/yosys" | grep libffi
+```
+
 ### set environment variables
 ```sh
     # should always run before using the toolchain!
@@ -132,4 +191,3 @@ echo "source <build-path>/ci/toolchain_env.sh" >> ~/.bashrc
 ./ci/blackbox.sh --app=demo --debug=3
 ```
 - For additional information, check out the [documentation](docs/index.md)
-
