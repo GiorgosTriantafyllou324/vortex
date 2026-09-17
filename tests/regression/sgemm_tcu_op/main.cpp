@@ -1109,16 +1109,16 @@ static void apply_pruning(std::vector<T>& matrix,
 }
 
 void cleanup() {
+  if (A_buffer) vx_mem_free(A_buffer);
+  if (B_buffer) vx_mem_free(B_buffer);
+  if (C_buffer) vx_mem_free(C_buffer);
+  if (D_buffer) vx_mem_free(D_buffer);
+  if (A_bitmap_buffer) vx_mem_free(A_bitmap_buffer);
+  if (B_bitmap_buffer) vx_mem_free(B_bitmap_buffer);
+  if (metrics_buffer) vx_mem_free(metrics_buffer);
   if (device) {
-    vx_mem_free(A_buffer);
-    vx_mem_free(B_buffer);
-    vx_mem_free(C_buffer);
-    vx_mem_free(D_buffer);
-    vx_mem_free(A_bitmap_buffer);
-    vx_mem_free(B_bitmap_buffer);
-    vx_mem_free(metrics_buffer);
-    vx_mem_free(krnl_buffer);
-    vx_mem_free(args_buffer);
+    if (krnl_buffer) vx_mem_free(krnl_buffer);
+    if (args_buffer) vx_mem_free(args_buffer);
     vx_dev_close(device);
   }
 }
@@ -1259,7 +1259,6 @@ int main(int argc, char *argv[]) {
   // open device connection
   std::cout << "open device connection" << std::endl;
   RT_CHECK(vx_dev_open(&device));
-
   uint64_t isa_flags;
   RT_CHECK(vx_dev_caps(device, VX_CAPS_ISA_FLAGS, &isa_flags));
   bool has_ext = (isa_flags & VX_ISA_EXT_TCU) != 0;
@@ -1275,6 +1274,9 @@ int main(int argc, char *argv[]) {
     std::cout << "Error: device warp size (" << NT << ") must match NUM_THREADS=" << NUM_THREADS << "!" << std::endl;
     return -1;
   }
+
+  uint64_t NC;
+  RT_CHECK(vx_dev_caps(device, VX_CAPS_NUM_CORES, &NC));
 
 #ifdef TCU_DISABLE_S1
   if (sparsity != 0 && sparsity != 2) {
@@ -1314,7 +1316,9 @@ int main(int argc, char *argv[]) {
   size_t sizeB = K * N;
   size_t sizeC = M * N;
   size_t sizeD = M * N;
-  constexpr size_t metrics_size = 10;
+  const uint32_t total_tiles = (M / 32) * (N / 32);
+  const uint32_t participating_cores = std::min<uint32_t>(NC, total_tiles);
+  const size_t metrics_size = 2 * participating_cores;
 
   std::cout << "input data type: " << vt::ITYPE::name << " (id=" << vt::ITYPE::id << ")" << std::endl;
   std::cout << "output data type: " << vt::OTYPE::name << " (id=" << vt::OTYPE::id << ")" << std::endl;
@@ -1327,7 +1331,7 @@ int main(int argc, char *argv[]) {
   std::cout << "matrix A: " << M << "x" << K << std::endl;
   std::cout << "matrix B: " << K << "x" << N << std::endl;
   std::cout << "matrix C: " << M << "x" << N << std::endl;
-  uint32_t grid_dim[2]  = {1, 1};
+  uint32_t grid_dim[2]  = {participating_cores, 1};
   uint32_t block_dim[2] = {(uint32_t)NT, 1};
 
   // set matrix dimensions
@@ -1364,8 +1368,6 @@ int main(int argc, char *argv[]) {
   std::vector<itype_t> h_A_packed;
   std::vector<itype_t> h_B_packed;
   std::vector<otype_t> h_C_packed;
-  uint32_t h_A_bitmap_words = 0;
-  uint32_t h_B_bitmap_words = 0;
   // std::vector<otype_t> h_D(sizeD);
 
   for (uint32_t i = 0; i < sizeA; ++i) {
@@ -1412,7 +1414,6 @@ int main(int argc, char *argv[]) {
 
   if (sparsity == 2) {
     std::vector<uint8_t> h_A_bitmap = build_bitmap_A_colmajor_tiled32(h_A, M, K);
-    h_A_bitmap_words = h_A_bitmap.size() / sizeof(uint32_t);
     std::cout << "A bitmap bytes: " << h_A_bitmap.size() << " (bits=" << (M * K) << ")" << std::endl;
     trace_bitmap("A", h_A_bitmap);
 
@@ -1423,7 +1424,6 @@ int main(int argc, char *argv[]) {
   }
   if (sparsity >= 1) {
     std::vector<uint8_t> h_B_bitmap = build_bitmap_B_rowmajor_tiled32N(h_B, K, N);
-    h_B_bitmap_words = h_B_bitmap.size() / sizeof(uint32_t);
     std::cout << "B bitmap bytes: " << h_B_bitmap.size() << " (bits=" << (K * N) << ")" << std::endl;
     trace_bitmap("B", h_B_bitmap);
 
@@ -1558,9 +1558,12 @@ int main(int argc, char *argv[]) {
     constexpr uint32_t tile_M = 32;
     constexpr uint32_t tile_N = 32;
     const uint32_t tile_a_elems = tile_M * dxa_tile_k;
-    const uint32_t total_a_tiles = (M / tile_M) * (K / dxa_tile_k);
+    const uint32_t tiles_m = M / tile_M;
+    const uint32_t tiles_k = K / dxa_tile_k;
+    const uint32_t tiles_n = N / tile_N;
     const uint32_t tile_b_elems = dxa_tile_k * tile_N;
-    const uint32_t total_b_tiles = (N / tile_N) * (K / dxa_tile_k);
+    const uint32_t total_a_tiles = tiles_m * tiles_k;
+    const uint32_t total_b_tiles = tiles_n * tiles_k;
 
     if (sparsity == 2) {
       const uint32_t a_transfer_elems =
@@ -1571,12 +1574,20 @@ int main(int argc, char *argv[]) {
           tile_a_elems * sizeof(itype_t),
           a_transfer_elems, 1,
           sizeof(itype_t)));
-    } else {
+    } else if (sparsity == 1) {
       RT_CHECK(vx_dxa_program_desc_2d(
           device, kDescA, kernel_arg.A_addr,
           tile_a_elems, total_a_tiles,
           tile_a_elems * sizeof(itype_t),
           tile_a_elems, 1,
+          sizeof(itype_t)));
+    } else {
+      RT_CHECK(vx_dxa_program_desc_3d(
+          device, kDescA, kernel_arg.A_addr,
+          tile_a_elems, tiles_k, tiles_m,
+          tile_a_elems * sizeof(itype_t),
+          tiles_k * tile_a_elems * sizeof(itype_t),
+          tile_a_elems, 1, 1,
           sizeof(itype_t)));
     }
 
@@ -1590,18 +1601,19 @@ int main(int argc, char *argv[]) {
           b_transfer_elems, 1,
           sizeof(itype_t)));
     } else {
-      RT_CHECK(vx_dxa_program_desc_2d(
+      RT_CHECK(vx_dxa_program_desc_3d(
           device, kDescB, kernel_arg.B_addr,
-          tile_b_elems, total_b_tiles,
+          tile_b_elems, tiles_k, tiles_n,
           tile_b_elems * sizeof(itype_t),
-          tile_b_elems, 1,
+          tiles_k * tile_b_elems * sizeof(itype_t),
+          tile_b_elems, 1, 1,
           sizeof(itype_t)));
     }
 
     if (sparsity == 2) {
       RT_CHECK(vx_dxa_program_desc_1d(
           device, kDescABitmap, kernel_arg.A_bitmap_addr,
-          h_A_bitmap_words,
+          (M * K) / 32,
           dxa_tile_k,
           sizeof(uint32_t)));
     }
@@ -1609,27 +1621,23 @@ int main(int argc, char *argv[]) {
     if (sparsity >= 1) {
       RT_CHECK(vx_dxa_program_desc_1d(
           device, kDescBBitmap, kernel_arg.B_bitmap_addr,
-          h_B_bitmap_words,
+          (K * N) / 32,
           dxa_tile_k,
           sizeof(uint32_t)));
     }
   }
 
-  // upload program
   std::cout << "upload program" << std::endl;
   RT_CHECK(vx_upload_kernel_file(device, kernel_file, &krnl_buffer));
 
-  // upload kernel argument
   std::cout << "upload kernel argument" << std::endl;
   RT_CHECK(vx_upload_bytes(device, &kernel_arg, sizeof(kernel_arg_t), &args_buffer));
 
   auto time_start = std::chrono::high_resolution_clock::now();
 
-  // start device
   std::cout << "start device" << std::endl;
   RT_CHECK(vx_start_g(device, krnl_buffer, args_buffer, 2, grid_dim, block_dim, 0));
 
-  // wait for completion
   std::cout << "wait for completion" << std::endl;
   RT_CHECK(vx_ready_wait(device, VX_MAX_TIMEOUT));
 
@@ -1637,7 +1645,6 @@ int main(int argc, char *argv[]) {
   double elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(time_end - time_start).count();
   printf("Elapsed time: %lg ms\n", elapsed);
 
-  // download destination buffer
   std::vector<otype_t> h_D_tiled(sizeD);
   std::cout << "download destination buffer" << std::endl;
   RT_CHECK(vx_copy_from_dev(h_D_tiled.data(), D_buffer, 0, sizeD * sizeof(otype_t)));
@@ -1645,8 +1652,16 @@ int main(int argc, char *argv[]) {
 
   std::cout << "download metrics buffer" << std::endl;
   RT_CHECK(vx_copy_from_dev(h_metrics.data(), metrics_buffer, 0, h_metrics.size() * sizeof(uint64_t)));
-  std::cout << "Kernel body cycles: " << h_metrics[0] << std::endl;
-  std::cout << "Kernel body instructions: " << h_metrics[1] << std::endl;
+
+  uint64_t kernel_cycles = 0;
+  uint64_t kernel_instructions = 0;
+  for (uint32_t i = 0; i < participating_cores; ++i) {
+    kernel_cycles = std::max(kernel_cycles, h_metrics[2 * i + 0]);
+    kernel_instructions += h_metrics[2 * i + 1];
+  }
+  std::cout << "Participating cores: " << participating_cores << std::endl;
+  std::cout << "Kernel body cycles: " << kernel_cycles << std::endl;
+  std::cout << "Kernel body instructions: " << kernel_instructions << std::endl;
 
   std::cout << "Matrix D:" << std::endl;
   print_2d_output_matrix(h_D, M, N, h_C);

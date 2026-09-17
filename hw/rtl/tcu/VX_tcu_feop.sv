@@ -59,9 +59,9 @@ module VX_tcu_feop import VX_tcu_pkg::*; #(
         `UNUSED_VAR({fflags, xprod[63:32]});
 `endif
 
-        wire [15:0] b_16b = b_row[j >> 1][5'(j[0] << 4) +: 16];
+        wire [15:0] b_16b = b_row[j >> 1][(5'(j[0]) << 4) +: 16];
         wire [15:0] b_16b_gated = valid_in_bitmap[j] ? b_16b : 16'h0;
-        wire [7:0]  b_8b = b_row[j >> 2][5'(j[1:0] << 3) +: 8];
+        wire [7:0]  b_8b = b_row[j >> 2][(5'(j[1:0]) << 3) +: 8];
         wire [7:0]  b_8b_gated = valid_in_bitmap[j] ? b_8b : 8'h0;
         wire signed [7:0]  a_i8 = $signed(a_elem[7:0]);
         wire signed [7:0]  b_i8 = valid_in_bitmap[j] ? $signed(b_8b) : 8'sd0;

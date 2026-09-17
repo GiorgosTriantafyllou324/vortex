@@ -7,6 +7,21 @@ BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build}"
 MAKE_LOCK_FILE="${MAKE_LOCK_FILE:-}"
 export MAKE_LOCK_FILE
 
+TOOLCHAIN_ENV="${BUILD_DIR}/ci/toolchain_env.sh"
+if [[ ! -f "${TOOLCHAIN_ENV}" ]]; then
+  echo "Missing configured toolchain environment: ${TOOLCHAIN_ENV}" >&2
+  exit 1
+fi
+source "${TOOLCHAIN_ENV}"
+
+CCACHE_DIR="${CCACHE_DIR:-${BUILD_DIR}/.ccache}"
+mkdir -p "${CCACHE_DIR}"
+export CCACHE_DIR
+
+# Verilator can exit with status 255 when all host CPUs are used for this build.
+THREADS="${THREADS:-${RTLSIM_BUILD_THREADS:-1}}"
+export THREADS
+
 M=64
 N=64
 K=64
@@ -187,14 +202,21 @@ run_ip_test() {
     --driver=rtlsim \
     --app="${app}" \
     --warps="${WARPS}" \
-    --debug="${DEBUG_LEVEL}" \
     --log="${log_file}" \
     --args="${ip_app_args}"
   )
 
   blackbox_cmd+=(--perf="${PERF_CLASS}")
 
-  CONFIGS="${ip_runtime_configs}" "${blackbox_cmd[@]}" || return $?
+  if [[ "${DEBUG_LEVEL}" -ne 0 ]]; then
+    blackbox_cmd+=(--debug="${DEBUG_LEVEL}")
+  fi
+
+  if [[ "${DEBUG_LEVEL}" -eq 0 ]]; then
+    CONFIGS="${ip_runtime_configs}" "${blackbox_cmd[@]}" > "${log_file}" 2>&1 || return $?
+  else
+    CONFIGS="${ip_runtime_configs}" "${blackbox_cmd[@]}" || return $?
+  fi
 }
 
 select_tests() {
@@ -373,16 +395,24 @@ if [[ "${RUN_TCU_OP}" -eq 1 ]]; then
     --driver=rtlsim
     --app=sgemm_tcu_op
     --warps="${WARPS}"
-    --debug="${DEBUG_LEVEL}"
     --log="${LOG_FILE}"
     --args="${APP_ARGS_STR}"
   )
 
   BLACKBOX_CMD+=(--perf="${PERF_CLASS}")
 
+  if [[ "${DEBUG_LEVEL}" -ne 0 ]]; then
+    BLACKBOX_CMD+=(--debug="${DEBUG_LEVEL}")
+  fi
+
   if [[ "${TCU_OP_READY}" -eq 1 ]]; then
-    CONFIGS="-DNUM_THREADS=${NUM_THREADS} -DEXT_TCU_ENABLE -DTCU_TYPE_DPI -DTCU_OP -DEXT_DXA_ENABLE -DTCU_FEOP_BLOCK_M_OVERRIDE=${BLOCK_M} -DTCU_FEOP_BLOCK_N_OVERRIDE=${BLOCK_N} -DTCU_FEOP_XBAR_QUEUE_DEPTH_OVERRIDE=${XBAR_QUEUE_DEPTH}" \
-    "${BLACKBOX_CMD[@]}" || STATUS=$?
+    if [[ "${DEBUG_LEVEL}" -eq 0 ]]; then
+      CONFIGS="-DNUM_THREADS=${NUM_THREADS} -DEXT_TCU_ENABLE -DTCU_TYPE_DPI -DTCU_OP -DEXT_DXA_ENABLE -DTCU_FEOP_BLOCK_M_OVERRIDE=${BLOCK_M} -DTCU_FEOP_BLOCK_N_OVERRIDE=${BLOCK_N} -DTCU_FEOP_XBAR_QUEUE_DEPTH_OVERRIDE=${XBAR_QUEUE_DEPTH}" \
+      "${BLACKBOX_CMD[@]}" > "${LOG_FILE}" 2>&1 || STATUS=$?
+    else
+      CONFIGS="-DNUM_THREADS=${NUM_THREADS} -DEXT_TCU_ENABLE -DTCU_TYPE_DPI -DTCU_OP -DEXT_DXA_ENABLE -DTCU_FEOP_BLOCK_M_OVERRIDE=${BLOCK_M} -DTCU_FEOP_BLOCK_N_OVERRIDE=${BLOCK_N} -DTCU_FEOP_XBAR_QUEUE_DEPTH_OVERRIDE=${XBAR_QUEUE_DEPTH}" \
+      "${BLACKBOX_CMD[@]}" || STATUS=$?
+    fi
   fi
 fi
 

@@ -22,6 +22,9 @@ CSV_HEADER="file,testbench,run,m,n,k,sparsity,a_sparsity,b_sparsity,num_threads,
 
 CONFIGS=(
 
+  # TEST RUN
+  "-m 32  -n 32  -k 128  -s 0 -a 0.0  -b 0.0  -T 32 -i fp8 -o fp32 -w 2 -M 2 -N 16 -Q 4 -p 2 -d 0 -t sgemm_tcu_op -l run.log"
+
   #  COMPARISON WITH SMALLER BASELINES - FROM SERVER
   # "-m 128  -n 128  -k 512  -s 0 -a 0.0  -b 0.0  -T 32 -i fp32 -o fp32 -w 2 -M 2 -N 16 -Q 4 -p 2 -t sgemm_tcu    -l run_b_1.log"
   # "-m 128  -n 128  -k 512  -s 0 -a 0.0  -b 0.0  -T 32 -i fp32 -o fp32 -w 2 -M 2 -N 16 -Q 4 -p 2 -t sgemm_tcu_sp -l run_b_2.log"
@@ -34,7 +37,7 @@ CONFIGS=(
 
   # "-m 128  -n 128  -k 512  -s 0 -a 0.0  -b 0.0  -T 32 -i fp8  -o fp32 -w 2 -M 2 -N 16 -Q 4 -p 2 -t sgemm_tcu_op -l run_b_7.log"
   # "-m 128  -n 128  -k 512  -s 0 -a 0.0  -b 0.0  -T 32 -i fp16 -o fp32 -w 2 -M 2 -N 16 -Q 4 -p 2 -t sgemm_tcu_op -l run_b_8.log"
-  "-m 128  -n 128  -k 512  -s 0 -a 0.0  -b 0.0  -T 32 -i fp32 -o fp32 -w 2 -M 2 -N 16 -Q 4 -p 2 -t sgemm_tcu_op -l run_b_9.log"
+  # "-m 128  -n 128  -k 512  -s 0 -a 0.0  -b 0.0  -T 32 -i fp32 -o fp32 -w 2 -M 2 -N 16 -Q 4 -p 2 -t sgemm_tcu_op -l run_b_9.log"
 
   # "-m 128  -n 128  -k 512  -s 2 -a 0.2  -b 0.2  -T 32 -i fp8  -o fp32 -w 2 -M 2 -N 16 -Q 4 -p 2 -t sgemm_tcu_op -l run_b_10.log"
   # "-m 128  -n 128  -k 512  -s 2 -a 0.5  -b 0.5  -T 32 -i fp8  -o fp32 -w 2 -M 2 -N 16 -Q 4 -p 2 -t sgemm_tcu_op -l run_b_11.log"
@@ -44,9 +47,9 @@ CONFIGS=(
   # "-m 128  -n 128  -k 512  -s 2 -a 0.5  -b 0.5  -T 32 -i fp16  -o fp32 -w 2 -M 2 -N 16 -Q 4 -p 2 -t sgemm_tcu_op -l run_b_14.log"
   # "-m 128  -n 128  -k 512  -s 2 -a 0.9  -b 0.9  -T 32 -i fp16  -o fp32 -w 2 -M 2 -N 16 -Q 4 -p 2 -t sgemm_tcu_op -l run_b_15.log"
 
-  "-m 128  -n 128  -k 512  -s 2 -a 0.2  -b 0.2  -T 32 -i fp32  -o fp32 -w 2 -M 2 -N 16 -Q 4 -p 2 -t sgemm_tcu_op -l run_b_16.log"
-  "-m 128  -n 128  -k 512  -s 2 -a 0.5  -b 0.5  -T 32 -i fp32  -o fp32 -w 2 -M 2 -N 16 -Q 4 -p 2 -t sgemm_tcu_op -l run_b_17.log"
-  "-m 128  -n 128  -k 512  -s 2 -a 0.9  -b 0.9  -T 32 -i fp32  -o fp32 -w 2 -M 2 -N 16 -Q 4 -p 2 -t sgemm_tcu_op -l run_b_18.log"
+  # "-m 128  -n 128  -k 512  -s 2 -a 0.2  -b 0.2  -T 32 -i fp32  -o fp32 -w 2 -M 2 -N 16 -Q 4 -p 2 -t sgemm_tcu_op -l run_b_16.log"
+  # "-m 128  -n 128  -k 512  -s 2 -a 0.5  -b 0.5  -T 32 -i fp32  -o fp32 -w 2 -M 2 -N 16 -Q 4 -p 2 -t sgemm_tcu_op -l run_b_17.log"
+  # "-m 128  -n 128  -k 512  -s 2 -a 0.9  -b 0.9  -T 32 -i fp32  -o fp32 -w 2 -M 2 -N 16 -Q 4 -p 2 -t sgemm_tcu_op -l run_b_18.log"
 
   # INSTRUCTION & MEMORY COMPARISON WITH BASELINES & SPARSITY - USE SOME STATS FROM ABOVE
 
