@@ -1582,12 +1582,11 @@ int main(int argc, char *argv[]) {
           tile_a_elems, 1,
           sizeof(itype_t)));
     } else {
-      RT_CHECK(vx_dxa_program_desc_3d(
+      RT_CHECK(vx_dxa_program_desc_2d(
           device, kDescA, kernel_arg.A_addr,
-          tile_a_elems, tiles_k, tiles_m,
+          tile_a_elems, total_a_tiles,
           tile_a_elems * sizeof(itype_t),
-          tiles_k * tile_a_elems * sizeof(itype_t),
-          tile_a_elems, 1, 1,
+          tile_a_elems, 1,
           sizeof(itype_t)));
     }
 
@@ -1601,12 +1600,11 @@ int main(int argc, char *argv[]) {
           b_transfer_elems, 1,
           sizeof(itype_t)));
     } else {
-      RT_CHECK(vx_dxa_program_desc_3d(
+      RT_CHECK(vx_dxa_program_desc_2d(
           device, kDescB, kernel_arg.B_addr,
-          tile_b_elems, tiles_k, tiles_n,
+          tile_b_elems, total_b_tiles,
           tile_b_elems * sizeof(itype_t),
-          tiles_k * tile_b_elems * sizeof(itype_t),
-          tile_b_elems, 1, 1,
+          tile_b_elems, 1,
           sizeof(itype_t)));
     }
 

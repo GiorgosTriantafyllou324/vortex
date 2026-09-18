@@ -50,7 +50,7 @@ module VX_tcu_op_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
     `error "VX_tcu_op_core: TCU_TYPE_DPI or TCU_TYPE_BHF must be defined"
 `endif
     localparam MDATA_QUEUE_DEPTH = 1; // At maximum we have another intruction pending when the current one is finishing
-    localparam XBAR_LATENCY      = TCU_FEOP_BLOCK_M_SIZE * TCU_FEOP_BLOCK_N_SIZE / 32; // TODO: Not sure if condition is legit
+    localparam XBAR_LATENCY      = 1;
 
     `UNUSED_VAR(execute_if.data.rs3_data)
     `UNUSED_VAR(execute_if.data.op_args)
@@ -100,10 +100,6 @@ module VX_tcu_op_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
 
 
     // Registers_per_FEOP_block / registers_per_LSU_load - 1
-    localparam C_BUF_SLOTS = 6'(TCU_FEOP_BLOCK_M_SIZE * TCU_FEOP_BLOCK_N_SIZE / `NUM_LSU_LANES - 1); // Amount of responses we can store before accumulating
-    
-    `STATIC_ASSERT ((TCU_FEOP_STEPS != 32) || C_BUF_SLOTS == '0, ("for 32 steps, we dont accumulate C"));
-
     /* Used to calculate the total A, B blocks */
     localparam LG_REGS_PER_BLOCK = $clog2(`NUM_LSU_LANES);
 
@@ -141,16 +137,23 @@ module VX_tcu_op_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
     reg [BITMAP_BUF_SLOTS-1:0] bitmap_active_block;
     reg [`XLEN-1:0] bitmap_blocks_loaded;                                    // Loaded but not processed
     reg [BITMAP_BUF_SLOTS-1:0][`NUM_THREADS-1:0][`XLEN-1:0] Bitmap_buffered; // Holds loaded data to be processed
-    wire bitmap_req_ready = bitmap_addr_valid && (c_blocks_requested == TCU_C_BLOCKS_IN_ACCU) && (bitmap_blk_rq_bits != '1); // Bitmap requests start only after the ACCU is initialized with the values of C
+    wire bitmap_req_ready = bitmap_addr_valid
+                         && (c_blocks_requested == TCU_C_BLOCKS_IN_ACCU)
+                         && (bitmap_blk_rq_bits != '1)
+                         // Do not launch the second split A/B bitmap read until
+                         // the first response has established the active slot.
+                         && ((bitmap_blk_rq_bits == '0) || (bitmap_blk_ld_bits != '0));
 
     reg [`XLEN-1:0]                      c_tile_addr;
     reg                                  c_tile_addr_valid;    // Is set to false when all C blocks have been requested
     reg [$clog2(TCU_C_BLOCKS_IN_ACCU):0] c_blocks_requested;     // Requested to be fetched
     reg [$clog2(TCU_C_BLOCKS_IN_ACCU):0] c_blocks_loaded;        // Loaded but not accumulated
     reg [$clog2(TCU_C_BLOCKS_IN_ACCU):0] c_blocks_accumulated;   // Accumulated / loaded (once loaded they are directly accumulated)
-
-    reg [`MAX(0, C_BUF_SLOTS-1):0][`NUM_THREADS-1:0][`XLEN-1:0] C_buffered; // Holds loaded data to be accumulated
-    `UNUSED_VAR (C_buffered); // Only used when C_BUF_SLOTS > 0
+    localparam int C_FEOP_BLOCKS_PER_LSU = `NUM_LSU_LANES / TCU_FEOP_NUM_MULS;
+    localparam int C_ACCUM_PHASE_W = `LOG2UP(C_FEOP_BLOCKS_PER_LSU);
+    reg [C_ACCUM_PHASE_W-1:0] c_accum_phase;
+    reg                       c_accum_pending;
+    reg [`NUM_THREADS-1:0][`XLEN-1:0] c_rsp_buffer;
 
     wire c_req_ready = init_flag && c_tile_addr_valid;
      
@@ -229,6 +232,9 @@ module VX_tcu_op_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
             c_blocks_requested   <= '0;
             c_blocks_loaded      <= '0;
             c_blocks_accumulated <= '0;
+            c_accum_phase        <= '0;
+            c_accum_pending      <= 1'b0;
+            c_rsp_buffer         <= '0;
         
             d_tile_addr <= '0;
 
@@ -475,9 +481,7 @@ module VX_tcu_op_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
                         b_load_block <= ~b_load_block; // 01->10, 10->01
                     end
                     MATRIX_ID_BITS'(8): begin  // C
-                        if (~accumulate_c && C_BUF_SLOTS > 0) begin
-                            C_buffered[c_blocks_loaded % (C_BUF_SLOTS+1)] <= tcu_lsu_mem_if.rsp_data.data; // Buffer until you can accumulate them all in 1 cycle
-                        end
+                        c_rsp_buffer <= tcu_lsu_mem_if.rsp_data.data;
                         c_blocks_loaded <= c_blocks_loaded + 1'b1;
                     end
                     default: begin
@@ -485,8 +489,22 @@ module VX_tcu_op_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
                     end
                 endcase
 
-                if (accumulate_c) begin
-                    c_blocks_accumulated <= c_blocks_accumulated + (C_BUF_SLOTS + 1);
+            end
+
+            if (c_rsp_fire) begin
+                if (C_FEOP_BLOCKS_PER_LSU == 1) begin
+                    c_blocks_accumulated <= c_blocks_accumulated + 1'b1;
+                end else begin
+                    c_accum_phase   <= C_ACCUM_PHASE_W'(1);
+                    c_accum_pending <= 1'b1;
+                end
+            end else if (c_accum_pending && accu_enable) begin
+                if (c_accum_phase == C_ACCUM_PHASE_W'(C_FEOP_BLOCKS_PER_LSU - 1)) begin
+                    c_blocks_accumulated <= c_blocks_accumulated + 1'b1;
+                    c_accum_phase   <= '0;
+                    c_accum_pending <= 1'b0;
+                end else begin
+                    c_accum_phase <= c_accum_phase + 1'b1;
                 end
             end
 
@@ -563,13 +581,13 @@ module VX_tcu_op_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
     wire rd_req_valid;
     wire [`XLEN-1:0] req_rd_addr;
 
-    localparam int C_BLOCKS_PER_FEOP_BLOCK = TCU_FEOP_BLOCK_M_SIZE * TCU_FEOP_BLOCK_N_SIZE / `NUM_LSU_LANES;
-    localparam LG_C_BLOCKS_PER_FEOP_BLOCK = $clog2(C_BLOCKS_PER_FEOP_BLOCK);
     wire rd_rsp_fire;
     wire [MATRIX_ID_BITS-1:0] rsp_matrix_id;
+    wire c_rsp_fire;
     wire accumulate_c;
     wire [$clog2(TCU_FEOP_STEPS):0] c_blk_idx;
-    wire [C_BUF_SLOTS:0][`NUM_THREADS-1:0][`XLEN-1:0] C_feop_block;
+    localparam int STEP_ELEM_CNT = TCU_FEOP_NUM_MULS;
+    wire [STEP_ELEM_CNT-1:0][`XLEN-1:0] C_feop_block;
 
     wire [LG_TCU_FEOP_M_STEPS:0] vertical_steps;
     wire [LG_TCU_FEOP_N_STEPS:0] horizontal_steps;
@@ -652,7 +670,6 @@ module VX_tcu_op_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
     wire last_set_in_block_a;
     wire last_set_in_block_b;
 
-    localparam int STEP_ELEM_CNT = TCU_FEOP_BLOCK_M_SIZE * TCU_FEOP_BLOCK_N_SIZE;
     wire [TCU_FEOP_BLOCK_M_SIZE-1:0][TCU_FEOP_BLOCK_N_SIZE-1:0][`XLEN-1:0] write_data;
     wire [TCU_FEOP_BLOCK_M_SIZE-1:0][LG_TCU_TC_M_OP-1:0] write_addr_row;
     wire [TCU_FEOP_BLOCK_N_SIZE-1:0][LG_TCU_TC_N_OP-1:0] write_addr_col;
@@ -749,13 +766,14 @@ module VX_tcu_op_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
                                       // If this is a  B block, accept it if we have a free slot in B_buffered
                                       (rsp_matrix_id == MATRIX_ID_BITS'(4)) ? (b_blk_ld_bits != '1) :
                                       // If this is a  C block, accept it if we have a free slot in C_buffered
-                                      (rsp_matrix_id == MATRIX_ID_BITS'(8)) ? ((c_blocks_loaded % (C_BUF_SLOTS+1) == C_BUF_SLOTS) ? accu_enable : 1'b1) :
+                                      (rsp_matrix_id == MATRIX_ID_BITS'(8)) ? (accu_enable && ~c_accum_pending) :
                                       1'b0;
-    
-    assign accumulate_c = (rsp_matrix_id == MATRIX_ID_BITS'(8)) && rd_rsp_fire && (c_blocks_loaded - c_blocks_accumulated == C_BUF_SLOTS) && accu_enable;
-    
+    assign c_rsp_fire = (rsp_matrix_id == MATRIX_ID_BITS'(8)) && rd_rsp_fire;
+    assign accumulate_c = c_rsp_fire || c_accum_pending;
+    wire [C_ACCUM_PHASE_W-1:0] c_accum_phase_active = c_rsp_fire ? '0 : c_accum_phase;
 
-    assign c_blk_idx = ($clog2(TCU_FEOP_STEPS+1))'(c_blocks_accumulated >> LG_C_BLOCKS_PER_FEOP_BLOCK);
+    assign c_blk_idx = ($clog2(TCU_FEOP_STEPS+1))'(
+        (32'(c_blocks_accumulated) * C_FEOP_BLOCKS_PER_LSU) + 32'(c_accum_phase_active));
 
     // if (C_BUF_SLOTS > 0) begin : g_c_feop_block
     //     if (c_tile_addr == '0) begin
@@ -770,7 +788,9 @@ module VX_tcu_op_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
         //     assign C_feop_block = tcu_lsu_mem_if.rsp_data.data;
         // end
 
-    assign C_feop_block = c_tile_addr == '0 ? '0 : tcu_lsu_mem_if.rsp_data.data;
+    wire [`NUM_THREADS-1:0][`XLEN-1:0] c_rsp_data = c_rsp_fire ? tcu_lsu_mem_if.rsp_data.data : c_rsp_buffer;
+    wire [C_FEOP_BLOCKS_PER_LSU-1:0][STEP_ELEM_CNT-1:0][`XLEN-1:0] c_rsp_blocks = c_rsp_data;
+    assign C_feop_block = c_tile_addr == '0 ? '0 : c_rsp_blocks[c_accum_phase_active];
     // end
 
 // MEMORY RESPONSE HANDLING
@@ -1135,6 +1155,7 @@ module VX_tcu_op_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
 
 
     VX_tcu_feop_accu #(
+        .NUM_MULS    (TCU_FEOP_NUM_MULS),
         .BLOCK_M      (TCU_FEOP_BLOCK_M_SIZE),
         .BLOCK_N      (TCU_FEOP_BLOCK_N_SIZE),
         .FACC_LATENCY (FACC_LATENCY),
@@ -1523,7 +1544,7 @@ module VX_tcu_op_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
                 `TRACE(2, ("%t: LMEM: read rsp: tag=%x mask=%b,   matrix=%0s accumulate_c=%b\nc_blocks_loaded=%0d, c_blocks_accumulated=%0d, C_buf_idx=%0d\n", $time,
                             tcu_lsu_mem_if.rsp_data.tag, tcu_lsu_mem_if.rsp_data.mask,
                             (rsp_matrix_id == 4'b0001) ? "Bitmap" : (rsp_matrix_id == 4'b0010) ? "A" : (rsp_matrix_id == 4'b0100) ? "B" : "C",
-                            accumulate_c, c_blocks_loaded, c_blocks_accumulated, c_blocks_loaded % (C_BUF_SLOTS+1)));
+                            accumulate_c, c_blocks_loaded, c_blocks_accumulated, c_accum_phase));
                 
                 for (integer l = 0; l < `NUM_LSU_LANES; l++) begin
                     if (tcu_lsu_mem_if.rsp_data.mask[l]) begin

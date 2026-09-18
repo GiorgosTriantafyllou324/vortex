@@ -6,8 +6,9 @@
 `include "VX_define.vh"
 
 module VX_tcu_feop_accu import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
+    parameter int NUM_MULS         = 32,
     parameter int BLOCK_M          = 2,
-    parameter int BLOCK_N          = 16,
+    parameter int BLOCK_N          = NUM_MULS / BLOCK_M,
     parameter int FADD_LATENCY     = 1,
     parameter int FRND_LATENCY     = 0, // TODO: Change to 1...
     parameter int FACC_LATENCY     = FADD_LATENCY + FRND_LATENCY,
@@ -39,12 +40,14 @@ module VX_tcu_feop_accu import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
 );
 
 initial begin
-    `TRACE(1, ("[feop_accu]: Parameters: BLOCK_M: %0d, BLOCK_N: %0d, XBAR_QUEUE_DEPTH: %0d\n", BLOCK_M, BLOCK_N, XBAR_QUEUE_DEPTH));
+    `TRACE(1, ("[feop_accu]: Parameters: NUM_MULS: %0d, BLOCK_M: %0d, BLOCK_N: %0d, XBAR_QUEUE_DEPTH: %0d\n", NUM_MULS, BLOCK_M, BLOCK_N, XBAR_QUEUE_DEPTH));
 end
+
+    `STATIC_ASSERT((BLOCK_M * BLOCK_N) == NUM_MULS, ("BLOCK_M * BLOCK_N must equal NUM_MULS"));
 
     localparam LG_BLOCK_M  = $clog2(BLOCK_M);
     localparam LG_BLOCK_N  = $clog2(BLOCK_N);
-    localparam int BANKS   = BLOCK_M * BLOCK_N;
+    localparam int BANKS   = NUM_MULS;
     localparam int SLOTS   = TCU_FEOP_STEPS;
     localparam int BANK_AW = $clog2(SLOTS);
     localparam int BANK_BW = $clog2(BANKS);
@@ -152,8 +155,8 @@ end
 // @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 // CROSSBAR
 
-    localparam int XBAR_INPUTS  = BLOCK_M * BLOCK_N; // 32;
-    localparam int XBAR_OUTPUTS = BANKS;             // 32;
+    localparam int XBAR_INPUTS  = NUM_MULS;
+    localparam int XBAR_OUTPUTS = NUM_MULS;
     localparam int XBAR_SELW    = $clog2(XBAR_OUTPUTS);
     localparam XBAR_DATAW = 1 + BANK_AW + `XLEN; // {from_queue, slot, data}
 
@@ -192,6 +195,8 @@ end
                 .NUM_INPUTS    (XBAR_INPUTS),
                 .NUM_OUTPUTS   (XBAR_OUTPUTS),
                 .DATAW         (XBAR_DATAW),
+                // The fanout hierarchy already contributes the configured
+                // one-cycle pipeline stage for 16- and 32-input crossbars.
                 .OUT_BUF       (0),
                 .PERF_CTR_BITS (PERF_CTR_BITS)
             ) accu_xbar (

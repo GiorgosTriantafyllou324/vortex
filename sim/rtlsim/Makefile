@@ -135,9 +135,11 @@ $(CONFIG_FILE): force
 	@mkdir -p $(@D)
 	@printf '%s\n' "$(VL_FLAGS)" > $@.tmp
 	@if ! cmp -s $@.tmp $@; then \
-	  mv $@.tmp $@; \
+		rm -rf $(DESTDIR)/lib$(PROJECT).so.obj_dir; \
+		rm -f $(DESTDIR)/lib$(PROJECT).so; \
+		mv $@.tmp $@; \
 	else \
-	  rm $@.tmp; \
+		rm $@.tmp; \
 	fi
 
 clean-lib:

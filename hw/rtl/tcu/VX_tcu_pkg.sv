@@ -94,6 +94,12 @@ package VX_tcu_pkg;
     localparam TCU_UOPS_OP = TCU_M_STEPS_OP * TCU_N_STEPS_OP * TCU_K_STEPS_OP;
 
     /* Parameters for FEOP steps */
+`ifdef TCU_FEOP_NUM_MULS_OVERRIDE
+    localparam TCU_FEOP_NUM_MULS = `TCU_FEOP_NUM_MULS_OVERRIDE;
+`else
+    localparam TCU_FEOP_NUM_MULS = 32;
+`endif
+
 `ifdef TCU_FEOP_BLOCK_M_OVERRIDE
     localparam TCU_FEOP_BLOCK_M_SIZE = `TCU_FEOP_BLOCK_M_OVERRIDE;
 `else
@@ -103,7 +109,7 @@ package VX_tcu_pkg;
 `ifdef TCU_FEOP_BLOCK_N_OVERRIDE
     localparam TCU_FEOP_BLOCK_N_SIZE = `TCU_FEOP_BLOCK_N_OVERRIDE;
 `else
-    localparam TCU_FEOP_BLOCK_N_SIZE = 16;
+    localparam TCU_FEOP_BLOCK_N_SIZE = TCU_FEOP_NUM_MULS / TCU_FEOP_BLOCK_M_SIZE;
 `endif
 
 `ifdef TCU_FEOP_XBAR_QUEUE_DEPTH_OVERRIDE

@@ -35,6 +35,7 @@ WARPS=2
 TESTS=sgemm_tcu_op
 BLOCK_M=2
 BLOCK_N=16
+NUM_MULS=32
 XBAR_QUEUE_DEPTH=2
 PERF_CLASS=2
 DEBUG_LEVEL=1
@@ -61,6 +62,7 @@ Options:
   -w <value>   blackbox --warps value (default: 2)
   -M <value>   FEOP BLOCK_M override (default: 2)
   -N <value>   FEOP BLOCK_N override (default: 16)
+  -u <value>   FEOP multiplier count (default: 32)
   -Q <value>   FEOP XBAR_QUEUE_DEPTH override (default: 2)
   -p <value>   blackbox --perf class (default: 2)
   -d <value>   blackbox --debug level (default: 1)
@@ -255,7 +257,7 @@ NORMALIZED_ARGS=()
 normalize_long_options "$@"
 set -- "${NORMALIZED_ARGS[@]}"
 
-while getopts ":m:n:k:s:a:b:t:T:i:o:w:M:N:Q:p:d:l:Ch" opt; do
+while getopts ":m:n:k:s:a:b:t:T:i:o:w:M:N:u:Q:p:d:l:Ch" opt; do
   case "${opt}" in
     m) M="${OPTARG}" ;;
     n) N="${OPTARG}" ;;
@@ -270,6 +272,7 @@ while getopts ":m:n:k:s:a:b:t:T:i:o:w:M:N:Q:p:d:l:Ch" opt; do
     w) WARPS="${OPTARG}" ;;
     M) BLOCK_M="${OPTARG}" ;;
     N) BLOCK_N="${OPTARG}" ;;
+    u) NUM_MULS="${OPTARG}" ;;
     Q) XBAR_QUEUE_DEPTH="${OPTARG}" ;;
     p) PERF_CLASS="${OPTARG}" ;;
     d) DEBUG_LEVEL="${OPTARG}" ;;
@@ -309,8 +312,8 @@ case "${SPARSITY}" in
     ;;
 esac
 
-if (( BLOCK_M <= 0 || BLOCK_N <= 0 || XBAR_QUEUE_DEPTH <= 0 )); then
-  echo "BLOCK_M, BLOCK_N, and XBAR_QUEUE_DEPTH must be positive integers." >&2
+if (( BLOCK_M <= 0 || BLOCK_N <= 0 || NUM_MULS <= 0 || XBAR_QUEUE_DEPTH <= 0 )); then
+  echo "BLOCK_M, BLOCK_N, NUM_MULS, and XBAR_QUEUE_DEPTH must be positive integers." >&2
   exit 1
 fi
 
@@ -321,6 +324,11 @@ fi
 
 if (( (BLOCK_M & (BLOCK_M - 1)) != 0 || (BLOCK_N & (BLOCK_N - 1)) != 0 )); then
   echo "BLOCK_M and BLOCK_N must be powers of two." >&2
+  exit 1
+fi
+
+if (( BLOCK_M * BLOCK_N != NUM_MULS )); then
+  echo "BLOCK_M * BLOCK_N must equal NUM_MULS." >&2
   exit 1
 fi
 
@@ -337,6 +345,7 @@ BUILD_CONFIGS=(
   "-DSGEMM_CONST_B_SPARSITY=${B_SPARSITY}f"
   "-DTCU_FEOP_BLOCK_M_OVERRIDE=${BLOCK_M}"
   "-DTCU_FEOP_BLOCK_N_OVERRIDE=${BLOCK_N}"
+  "-DTCU_FEOP_NUM_MULS_OVERRIDE=${NUM_MULS}"
   "-DTCU_FEOP_XBAR_QUEUE_DEPTH_OVERRIDE=${XBAR_QUEUE_DEPTH}"
 )
 
@@ -407,10 +416,10 @@ if [[ "${RUN_TCU_OP}" -eq 1 ]]; then
 
   if [[ "${TCU_OP_READY}" -eq 1 ]]; then
     if [[ "${DEBUG_LEVEL}" -eq 0 ]]; then
-      CONFIGS="-DNUM_THREADS=${NUM_THREADS} -DEXT_TCU_ENABLE -DTCU_TYPE_DPI -DTCU_OP -DEXT_DXA_ENABLE -DTCU_FEOP_BLOCK_M_OVERRIDE=${BLOCK_M} -DTCU_FEOP_BLOCK_N_OVERRIDE=${BLOCK_N} -DTCU_FEOP_XBAR_QUEUE_DEPTH_OVERRIDE=${XBAR_QUEUE_DEPTH}" \
+      CONFIGS="-DNUM_THREADS=${NUM_THREADS} -DEXT_TCU_ENABLE -DTCU_TYPE_DPI -DTCU_OP -DEXT_DXA_ENABLE -DTCU_FEOP_NUM_MULS_OVERRIDE=${NUM_MULS} -DTCU_FEOP_BLOCK_M_OVERRIDE=${BLOCK_M} -DTCU_FEOP_BLOCK_N_OVERRIDE=${BLOCK_N} -DTCU_FEOP_XBAR_QUEUE_DEPTH_OVERRIDE=${XBAR_QUEUE_DEPTH}" \
       "${BLACKBOX_CMD[@]}" > "${LOG_FILE}" 2>&1 || STATUS=$?
     else
-      CONFIGS="-DNUM_THREADS=${NUM_THREADS} -DEXT_TCU_ENABLE -DTCU_TYPE_DPI -DTCU_OP -DEXT_DXA_ENABLE -DTCU_FEOP_BLOCK_M_OVERRIDE=${BLOCK_M} -DTCU_FEOP_BLOCK_N_OVERRIDE=${BLOCK_N} -DTCU_FEOP_XBAR_QUEUE_DEPTH_OVERRIDE=${XBAR_QUEUE_DEPTH}" \
+      CONFIGS="-DNUM_THREADS=${NUM_THREADS} -DEXT_TCU_ENABLE -DTCU_TYPE_DPI -DTCU_OP -DEXT_DXA_ENABLE -DTCU_FEOP_NUM_MULS_OVERRIDE=${NUM_MULS} -DTCU_FEOP_BLOCK_M_OVERRIDE=${BLOCK_M} -DTCU_FEOP_BLOCK_N_OVERRIDE=${BLOCK_N} -DTCU_FEOP_XBAR_QUEUE_DEPTH_OVERRIDE=${XBAR_QUEUE_DEPTH}" \
       "${BLACKBOX_CMD[@]}" || STATUS=$?
     fi
   fi
