@@ -28,10 +28,19 @@ CONFIGS=(
   # MUL sweetspot evaluation
   # "-m 128 -n 128 -k 512 -s 0 -a 0.0 -b 0.0 -T 32 -i fp8 -o fp32 -w 2 -M 2 -N 8  -u 16 -Q 4 -p 2 -t sgemm_tcu_op -l run_m_1.log"
   # "-m 128 -n 128 -k 512 -s 2 -a 0.5 -b 0.5 -T 32 -i fp8 -o fp32 -w 2 -M 2 -N 8  -u 16 -Q 4 -p 2 -t sgemm_tcu_op -l run_m_2.log"
-  "-m 128 -n 128 -k 512 -s 2 -a 0.9 -b 0.9 -T 32 -i fp8 -o fp32 -w 2 -M 2 -N 8  -u 16 -Q 4 -p 2 -t sgemm_tcu_op -l run_m_3.log"
+  # "-m 128 -n 128 -k 512 -s 2 -a 0.9 -b 0.9 -T 32 -i fp8 -o fp32 -w 2 -M 2 -N 8  -u 16 -Q 4 -p 2 -t sgemm_tcu_op -l run_m_3.log"
+  
   # "-m 128 -n 128 -k 512 -s 0 -a 0.0 -b 0.0 -T 32 -i fp8 -o fp32 -w 2 -M 2 -N 16 -u 32 -Q 4 -p 2 -t sgemm_tcu_op -l run_m_4.log"
   # "-m 128 -n 128 -k 512 -s 2 -a 0.5 -b 0.5 -T 32 -i fp8 -o fp32 -w 2 -M 2 -N 16 -u 32 -Q 4 -p 2 -t sgemm_tcu_op -l run_m_5.log"
   # "-m 128 -n 128 -k 512 -s 2 -a 0.9 -b 0.9 -T 32 -i fp8 -o fp32 -w 2 -M 2 -N 16 -u 32 -Q 4 -p 2 -t sgemm_tcu_op -l run_m_6.log"
+
+  "-m 128 -n 128 -k 512 -s 0 -a 0.0 -b 0.0 -T 32 -i fp8 -o fp32 -w 2 -M 2 -N 4 -u 8 -Q 4 -p 2 -t sgemm_tcu_op -l run_m_7.log"
+  # "-m 128 -n 128 -k 512 -s 2 -a 0.5 -b 0.5 -T 32 -i fp8 -o fp32 -w 2 -M 2 -N 4 -u 8 -Q 4 -p 2 -t sgemm_tcu_op -l run_m_8.log"
+  # "-m 128 -n 128 -k 512 -s 2 -a 0.9 -b 0.9 -T 32 -i fp8 -o fp32 -w 2 -M 2 -N 4 -u 8 -Q 4 -p 2 -t sgemm_tcu_op -l run_m_9.log"
+
+  # "-m 128 -n 128 -k 512 -s 0 -a 0.0 -b 0.0 -T 32 -i fp8 -o fp32 -w 2 -M 2 -N 2 -u 4 -Q 4 -p 2 -t sgemm_tcu_op -l run_m_10.log"
+  # "-m 128 -n 128 -k 512 -s 2 -a 0.5 -b 0.5 -T 32 -i fp8 -o fp32 -w 2 -M 2 -N 2 -u 4 -Q 4 -p 2 -t sgemm_tcu_op -l run_m_11.log"
+  # "-m 128 -n 128 -k 512 -s 2 -a 0.9 -b 0.9 -T 32 -i fp8 -o fp32 -w 2 -M 2 -N 2 -u 4 -Q 4 -p 2 -t sgemm_tcu_op -l run_m_12.log"
 
   #  COMPARISON WITH SMALLER BASELINES - FROM SERVER
   # "-m 128  -n 128  -k 512  -s 0 -a 0.0  -b 0.0  -T 32 -i fp32 -o fp32 -w 2 -M 2 -N 16 -Q 4 -p 2 -t sgemm_tcu    -l run_b_1.log"

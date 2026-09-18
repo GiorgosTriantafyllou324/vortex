@@ -551,7 +551,7 @@ module VX_tcu_op_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
                 busy_r <= 1'b1;
             end 
             if (ready_to_flush && ~mem_stall) begin
-                d_line_to_flush <= d_line_to_flush + (LG_TCU_TC_M_OP + LG_TCU_FEOP_BLOCK_N_SIZE + 1)'(1);
+                d_line_to_flush <= d_line_to_flush + (LG_TCU_TC_M_OP + LG_TCU_FEOP_N_STEPS + 1)'(1);
             end
             if (wr_req_fire) begin
                 d_tile_addr <= d_tile_addr + (LSU_WORD_SIZE << LG_TCU_FEOP_BLOCK_N_SIZE);
@@ -703,13 +703,13 @@ module VX_tcu_op_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
     wire [TCU_FEOP_BLOCK_N_SIZE-1:0][`XLEN-1:0] d_line;
     wire wr_req_fire;
     wire ready_to_flush_delayed;
-    wire [LG_TCU_TC_M_OP + LG_TCU_FEOP_BLOCK_N_SIZE-1:0] d_line_to_flush_delayed;
+    wire [LG_TCU_TC_M_OP + LG_TCU_FEOP_N_STEPS-1:0] d_line_to_flush_delayed;
     wire valid_out;
 
-    wire [LG_TCU_TC_M_OP + LG_TCU_FEOP_BLOCK_N_SIZE:0] d_lines_ready;
+    wire [LG_TCU_TC_M_OP + LG_TCU_FEOP_N_STEPS:0] d_lines_ready;
     wire ready_to_flush_raw;
     wire ready_to_flush;
-    reg  [LG_TCU_TC_M_OP + LG_TCU_FEOP_BLOCK_N_SIZE:0] d_line_to_flush;
+    reg  [LG_TCU_TC_M_OP + LG_TCU_FEOP_N_STEPS:0] d_line_to_flush;
     wire no_flush_complete;
     wire result_pulse;
     reg  result_pending_r;
@@ -1006,8 +1006,8 @@ module VX_tcu_op_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
     for (genvar id = 0; id < TCU_FEOP_BLOCK_M_SIZE; id++) begin : g_feop_units
 
         wire [`XLEN-1:0] a_elem = `XLEN'(a_set_flat_processed >> (((32'(m) + 32'(id))) << ($clog2(`XLEN) - 32'(lg_i_ratio)))); 
-        // TODO: Fix the flattening here too
-        wire [TCU_FEOP_BLOCK_N_SIZE*`XLEN-1:0] b_row_flat = (TCU_FEOP_BLOCK_N_SIZE*`XLEN)'(b_set_flat >> ((32'(n) >> lg_i_ratio) << $clog2(`XLEN)));
+        wire [TCU_FEOP_BLOCK_N_SIZE*`XLEN-1:0] b_row_flat = (TCU_FEOP_BLOCK_N_SIZE*`XLEN)'(
+            b_set_flat >> (32'(n) << ($clog2(`XLEN) - 32'(lg_i_ratio))));
         wire [TCU_FEOP_BLOCK_N_SIZE-1:0][`XLEN-1:0] b_row = b_row_flat;
 
         wire [TCU_FEOP_BLOCK_N_SIZE-1:0] feop_bitmap = a_step_valids[id] ? b_step_valids : '0;
@@ -1191,7 +1191,7 @@ module VX_tcu_op_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
 // @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 // FLUSHING AND RESULT HANDLING
 
-    assign d_lines_ready = (issuing_done && (c_blk_idx == TCU_FEOP_STEPS)) ? (LG_TCU_TC_M_OP + LG_TCU_FEOP_BLOCK_N_SIZE + 1)'((TCU_TC_M_OP * TCU_FEOP_N_STEPS)) : '0;
+    assign d_lines_ready = (issuing_done && (c_blk_idx == TCU_FEOP_STEPS)) ? (LG_TCU_TC_M_OP + LG_TCU_FEOP_N_STEPS + 1)'((TCU_TC_M_OP * TCU_FEOP_N_STEPS)) : '0;
 
     // TODO: Fix condition - eg. simplify d_lines_ready (d_lines_ready == 32 && d_lines_ready != d_line_to_flush)
     // Stall flushing until all accumulator xbar queues are fully drained.
@@ -1383,7 +1383,7 @@ module VX_tcu_op_core import VX_gpu_pkg::*, VX_tcu_pkg::*; #(
         .clk     (clk),
         .reset   (reset),
         .enable  (feop_enable && ~mem_stall),
-        .data_in ({ready_to_flush,         d_line_to_flush[LG_TCU_TC_M_OP + LG_TCU_FEOP_BLOCK_N_SIZE - 1:0]}),
+        .data_in ({ready_to_flush,         d_line_to_flush[LG_TCU_TC_M_OP + LG_TCU_FEOP_N_STEPS - 1:0]}),
         .data_out({ready_to_flush_delayed, d_line_to_flush_delayed})
     );
 

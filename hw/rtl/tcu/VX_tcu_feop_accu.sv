@@ -159,6 +159,10 @@ end
     localparam int XBAR_OUTPUTS = NUM_MULS;
     localparam int XBAR_SELW    = $clog2(XBAR_OUTPUTS);
     localparam XBAR_DATAW = 1 + BANK_AW + `XLEN; // {from_queue, slot, data}
+    localparam bit XBAR_HAS_INTERNAL_REG = (`MAX_FANOUT != 0)
+        && (XBAR_INPUTS > (`MAX_FANOUT + (`MAX_FANOUT / 2)));
+    // Preserve a one-cycle crossbar latency when the fanout hierarchy is absent.
+    localparam int XBAR_OUT_BUF = XBAR_HAS_INTERNAL_REG ? 0 : 3;
 
     wire [XBAR_INPUTS-1:0][XBAR_DATAW-1:0] xbar_data_in;
     wire [XBAR_INPUTS-1:0][XBAR_SELW-1:0]  xbar_sel_in;
@@ -195,9 +199,8 @@ end
                 .NUM_INPUTS    (XBAR_INPUTS),
                 .NUM_OUTPUTS   (XBAR_OUTPUTS),
                 .DATAW         (XBAR_DATAW),
-                // The fanout hierarchy already contributes the configured
-                // one-cycle pipeline stage for 16- and 32-input crossbars.
-                .OUT_BUF       (0),
+                .MAX_FANOUT    (`MAX_FANOUT),
+                .OUT_BUF       (XBAR_OUT_BUF),
                 .PERF_CTR_BITS (PERF_CTR_BITS)
             ) accu_xbar (
                 .clk   (clk),
